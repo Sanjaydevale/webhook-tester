@@ -1,8 +1,10 @@
 package server_test
 
 import (
+	"net/http"
 	"strings"
 	"testing"
+	"whtester/cli"
 	"whtester/server"
 )
 
@@ -36,6 +38,20 @@ func TestRandomURL(t *testing.T) {
 				}
 			}
 			urlList = append(urlList, url)
+		}
+	})
+
+	t.Run("server listens on generated URL", func(t *testing.T) {
+		c := cli.Newclient()
+		defer c.Conn.Close()
+
+		u := c.URL
+		res, err := http.Head(u)
+		if err != nil {
+			t.Errorf("error making http HEAD, %s", err.Error())
+		}
+		if res.StatusCode == 404 {
+			t.Errorf("server is not listenting on URL, %s", u)
 		}
 	})
 }
