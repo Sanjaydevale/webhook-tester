@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"fmt"
+	"io"
 	"log"
 	"time"
 
@@ -10,6 +12,12 @@ import (
 type client struct {
 	URL  string
 	Conn *websocket.Conn
+}
+
+func (c *client) PrintMessage(w io.Writer) {
+	for {
+		fmt.Fprintf(w, "%v", read(c.Conn))
+	}
 }
 
 func Newclient() *client {

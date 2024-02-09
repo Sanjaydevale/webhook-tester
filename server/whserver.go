@@ -2,11 +2,19 @@ package server
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/gorilla/websocket"
 )
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
 
 type handler func(w http.ResponseWriter, r *http.Request)
 
@@ -22,12 +30,11 @@ func (s Subdomains) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Subdomains) AddNewClient(u string) {
+func (s *Subdomains) AddNewClient(u string, ws *websocket.Conn) {
 	uStruct, _ := url.Parse(u)
 	(*s)[uStruct.Host] = handler(func(w http.ResponseWriter, r *http.Request) {
 		//handle client
-		//forward any post request to cli
-		fmt.Println("hello this is getting called")
+		ws.WriteMessage(websocket.TextMessage, []byte("hello from server on post request"))
 		w.Write([]byte(fmt.Sprintf("server is listening at %s", r.Host)))
 	})
 }
@@ -55,4 +62,20 @@ func CheckValidURL(u string) bool {
 		return false
 	}
 	return true
+}
+
+func NewWebHookHandler() *http.ServeMux {
+	subDomainsHandler := Subdomains{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		ws, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			log.Fatalf("error establishing websocket connection")
+		}
+		u := []byte(GenerateRandomURL("http", "localhost:8080", 8))
+		subDomainsHandler.AddNewClient(string(u), ws)
+		ws.WriteMessage(websocket.TextMessage, u)
+	})
+	mux.Handle("/", subDomainsHandler)
+	return mux
 }

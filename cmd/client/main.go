@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"whtester/cli"
 )
@@ -12,5 +13,6 @@ func main() {
 	c := cli.Newclient()
 	defer c.Conn.Close()
 	fmt.Println(c.URL)
+	c.PrintMessage(os.Stdout)
 	wg.Wait()
 }
