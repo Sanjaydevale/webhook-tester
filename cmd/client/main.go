@@ -12,7 +12,11 @@ func main() {
 	wg.Add(1)
 	c := cli.Newclient()
 	defer c.Conn.Close()
-	fmt.Println(c.URL)
-	c.PrintMessage(os.Stdout)
+	fmt.Printf("link : %s", c.URL)
+	go func() {
+		for {
+			c.PrintMessage(os.Stdout)
+		}
+	}()
 	wg.Wait()
 }
