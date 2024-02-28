@@ -3,10 +3,12 @@ package server_test
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -126,20 +128,22 @@ func TestRandomURL(t *testing.T) {
 }
 
 func TestForwardingMessage(t *testing.T) {
-	t.Run("server forwards post requests to the client", func(t *testing.T) {
-		//run server
-		run, close := runGoFile(t, "../cmd/server/main.go", "main")
-		run.Start()
-		defer close()
-		time.Sleep(3 * time.Second)
+	// run server
+	run, close := runGoFile(t, "../cmd/server/main.go", "main")
+	run.Start()
+	defer close()
+	// wait for the server to start
+	time.Sleep(1 * time.Second)
 
-		//create a new client
+	t.Run("server pings the client on POST request to temp URL", func(t *testing.T) {
+
+		// create a new client
 		c := NewclientTestFake()
 		go func() {
 			c.read()
 		}()
 
-		//make post request to the server
+		// make post request to the server
 		whTrigger := webhookTrigger{
 			url: c.url,
 		}
@@ -149,6 +153,103 @@ func TestForwardingMessage(t *testing.T) {
 			t.Error("expected POST request to be forwarded by the server, but got none")
 		}
 	})
+
+	t.Run("server encodes the request into binary", func(t *testing.T) {
+		data := []byte("this is the body of the request")
+		reqBody := bytes.NewBuffer(data)
+		req, err := http.NewRequest(http.MethodPost, "http://localhost:8080", reqBody)
+		if err != nil {
+			t.Errorf("%v", err)
+		}
+
+		buf := server.EncodeRequest(req)
+		got := server.DecodeRequest(buf)
+
+		assertRequest(t, got, req)
+	})
+}
+
+func assertRequest(t testing.TB, got, want *http.Request) {
+	t.Helper()
+	// compare method
+	if got.Method != want.Method {
+		t.Errorf("different methods, got %q, want %q", got.Method, want.Method)
+	}
+
+	// compare URL
+	if !reflect.DeepEqual(*got.URL, *want.URL) {
+		t.Errorf("different URL's, got %q, want %q", got.URL, want.URL)
+	}
+
+	// compare Proto, ProtoMajor, ProtoMinor
+	if got.Proto != want.Proto {
+		t.Errorf("different protocols, got %q, want %q", got.Proto, want.Proto)
+	}
+
+	if got.ProtoMajor != want.ProtoMajor {
+		t.Errorf("different protocols versions, got %d, want %d", got.ProtoMajor, want.ProtoMajor)
+	}
+
+	if got.ProtoMinor != want.ProtoMinor {
+		t.Errorf("different protocol versions, got %d, want %d", got.ProtoMinor, want.ProtoMinor)
+	}
+
+	// compare request Headers
+	if !reflect.DeepEqual(got.Header, want.Header) {
+		t.Errorf("different Headers, got %#v, want %#v", got.Header, want.Header)
+	}
+
+	// compare bodies
+	if got.Body == nil {
+		got.Body = io.NopCloser(bytes.NewBuffer([]byte{}))
+	}
+	if want.Body == nil {
+		want.Body = io.NopCloser(bytes.NewBuffer([]byte{}))
+	}
+	gotBody, _ := io.ReadAll(got.Body)
+	wantBody, _ := io.ReadAll(want.Body)
+
+	got.Body = io.NopCloser(bytes.NewBuffer(gotBody))
+	want.Body = io.NopCloser(bytes.NewBuffer(wantBody))
+
+	if string(gotBody) != string(wantBody) {
+		t.Errorf("different Bodies, got %q, want %q", string(gotBody), string(wantBody))
+	}
+
+	// compare ContentLength
+	if int(got.ContentLength) != int(want.ContentLength) {
+		t.Errorf("different contentLengths, got %d, want %d", got.ContentLength, want.ContentLength)
+	}
+
+	// compare TransferEncoding
+	if !reflect.DeepEqual(got.TransferEncoding, want.TransferEncoding) {
+		t.Errorf("different TransferEncodings, got %v, want %v", got.TransferEncoding, want.TransferEncoding)
+	}
+
+	// compare Host
+	if got.Host != want.Host {
+		t.Errorf("different Hosts, got %q, want %q", got.Host, want.Host)
+	}
+
+	// compare PostForm
+	if !reflect.DeepEqual(got.PostForm, want.PostForm) {
+		t.Errorf("different PostForms's, got %v, want %v", got.PostForm, want.PostForm)
+	}
+
+	// compare Form
+	if !reflect.DeepEqual(got.Form, want.Form) {
+		t.Errorf("different Forms's, got %v, want %v", got.Form, want.Form)
+	}
+
+	// compare RemoteAddr
+	if got.RemoteAddr != want.RemoteAddr {
+		t.Errorf("different RemoteAddr, got %q, want %q", got.RemoteAddr, want.RemoteAddr)
+	}
+
+	// compare RequestURI
+	if got.RequestURI != want.RequestURI {
+		t.Errorf("different RequestURI, got %q, want %q", got.RequestURI, want.RequestURI)
+	}
 }
 
 func runGoFile(t testing.TB, loc string, filename string) (*exec.Cmd, func()) {
