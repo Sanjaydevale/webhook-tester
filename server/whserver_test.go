@@ -165,39 +165,15 @@ func TestForwardingMessage(t *testing.T) {
 		buf := server.EncodeRequest(req)
 		got := server.DecodeRequest(buf)
 
-		assertRequest(t, got, req)
+		assertRequest(t, *got, *req)
 	})
 }
 
-func assertRequest(t testing.TB, got, want *http.Request) {
+func assertRequest(t testing.TB, got, want http.Request) {
 	t.Helper()
-	// compare method
-	if got.Method != want.Method {
-		t.Errorf("different methods, got %q, want %q", got.Method, want.Method)
-	}
-
-	// compare URL
-	if !reflect.DeepEqual(*got.URL, *want.URL) {
-		t.Errorf("different URL's, got %q, want %q", got.URL, want.URL)
-	}
-
-	// compare Proto, ProtoMajor, ProtoMinor
-	if got.Proto != want.Proto {
-		t.Errorf("different protocols, got %q, want %q", got.Proto, want.Proto)
-	}
-
-	if got.ProtoMajor != want.ProtoMajor {
-		t.Errorf("different protocols versions, got %d, want %d", got.ProtoMajor, want.ProtoMajor)
-	}
-
-	if got.ProtoMinor != want.ProtoMinor {
-		t.Errorf("different protocol versions, got %d, want %d", got.ProtoMinor, want.ProtoMinor)
-	}
-
-	// compare request Headers
-	if !reflect.DeepEqual(got.Header, want.Header) {
-		t.Errorf("different Headers, got %#v, want %#v", got.Header, want.Header)
-	}
+	fields := []string{"Method", "Proto", "ProtoMajor", "ProtoMinor", "Header", "URL", "RequestURI",
+		"ContentLength", "TransferEncoding", "Host", "PostForm", "Form", "RemoteAddr"}
+	assertStruct(t, fields, got, want)
 
 	// compare bodies
 	if got.Body == nil {
@@ -216,39 +192,17 @@ func assertRequest(t testing.TB, got, want *http.Request) {
 		t.Errorf("different Bodies, got %q, want %q", string(gotBody), string(wantBody))
 	}
 
-	// compare ContentLength
-	if int(got.ContentLength) != int(want.ContentLength) {
-		t.Errorf("different contentLengths, got %d, want %d", got.ContentLength, want.ContentLength)
-	}
+}
 
-	// compare TransferEncoding
-	if !reflect.DeepEqual(got.TransferEncoding, want.TransferEncoding) {
-		t.Errorf("different TransferEncodings, got %v, want %v", got.TransferEncoding, want.TransferEncoding)
-	}
+func assertStruct(t testing.TB, fields []string, structA, structB interface{}) {
+	t.Helper()
+	valA := reflect.ValueOf(structA)
+	valB := reflect.ValueOf(structB)
 
-	// compare Host
-	if got.Host != want.Host {
-		t.Errorf("different Hosts, got %q, want %q", got.Host, want.Host)
-	}
-
-	// compare PostForm
-	if !reflect.DeepEqual(got.PostForm, want.PostForm) {
-		t.Errorf("different PostForms's, got %v, want %v", got.PostForm, want.PostForm)
-	}
-
-	// compare Form
-	if !reflect.DeepEqual(got.Form, want.Form) {
-		t.Errorf("different Forms's, got %v, want %v", got.Form, want.Form)
-	}
-
-	// compare RemoteAddr
-	if got.RemoteAddr != want.RemoteAddr {
-		t.Errorf("different RemoteAddr, got %q, want %q", got.RemoteAddr, want.RemoteAddr)
-	}
-
-	// compare RequestURI
-	if got.RequestURI != want.RequestURI {
-		t.Errorf("different RequestURI, got %q, want %q", got.RequestURI, want.RequestURI)
+	for _, field := range fields {
+		if !reflect.DeepEqual(valA.FieldByName(field).Interface(), valB.FieldByName(field).Interface()) {
+			t.Errorf("different %s, got %v, want %v", field, valA.FieldByName(field), valB.FieldByName(field))
+		}
 	}
 }
 

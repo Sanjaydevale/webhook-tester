@@ -15,43 +15,53 @@ type client struct {
 }
 
 func (c *client) PrintMessage(w io.Writer) {
-	for {
-		fmt.Fprintf(w, "%v", read(c.Conn))
+
+	data, err := read(c.Conn)
+	if err != nil {
+		fmt.Println("connection closed")
+		return
 	}
+	fmt.Fprint(w, data)
+
 }
 
 func Newclient() *client {
 	c := &client{}
-	c.Conn = NewConn()
+	c.Conn = NewConn("ws://localhost:8080/ws")
 	c.URL = readURL(c.Conn)
 	return c
 }
 
-func read(ws *websocket.Conn) string {
+func read(ws *websocket.Conn) (string, error) {
 	for {
 		_, data, err := ws.ReadMessage()
 		if err != nil {
-			continue
+			return "", err
 		}
 		if len(data) != 0 {
-			return string(data)
+			return string(data), nil
 		}
 	}
 }
 
 func readURL(ws *websocket.Conn) string {
 	result := make(chan string, 1)
+	go func() {
+		data, _ := read(ws)
+		result <- data
+		close(result)
+	}()
 	select {
-	case result <- read(ws):
-		return <-result
+	case url := <-result:
+		return url
 	case <-time.After(5 * time.Second):
 		log.Fatalf("took too long to read message from server")
 	}
 	return ""
 }
 
-func NewConn() *websocket.Conn {
-	ws, _, err := websocket.DefaultDialer.Dial("ws://localhost:8080/ws", nil)
+func NewConn(wsLink string) *websocket.Conn {
+	ws, _, err := websocket.DefaultDialer.Dial(wsLink, nil)
 	if err != nil {
 		log.Fatalf("error establishing websocket connection: %v", err.Error())
 	}
