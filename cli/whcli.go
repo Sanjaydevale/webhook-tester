@@ -18,10 +18,9 @@ func (c *client) PrintMessage(w io.Writer) {
 
 	data, err := read(c.Conn)
 	if err != nil {
-		fmt.Println("connection closed")
 		return
 	}
-	fmt.Fprint(w, data)
+	fmt.Fprint(w, "\n"+data)
 
 }
 

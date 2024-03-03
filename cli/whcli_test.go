@@ -65,17 +65,17 @@ func TestWhCLI(t *testing.T) {
 		}
 	})
 
-	t.Run("cli prints the same, it receives from the server", func(t *testing.T) {
+	t.Run("cli prints the same message, in a new line it receives from the server", func(t *testing.T) {
 
 		buf := new(bytes.Buffer)
 
 		c := cli.Newclient()
 		defer c.Conn.Close()
 
-		want := "message sent"
-		s.WriteMessage(want)
+		msg := "message sent"
+		s.WriteMessage(msg)
 		c.PrintMessage(buf)
-
+		want := "\n" + msg
 		if buf.String() != want {
 			t.Errorf("got %q, want %q", buf.String(), want)
 		}
