@@ -3,12 +3,10 @@ package server_test
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -19,28 +17,36 @@ import (
 )
 
 type clientTestFake struct {
-	output [][]byte
+	output map[int][][]byte
 	url    string
 	domain string
 	ws     *websocket.Conn
+	client http.Client
 }
 
 func (c *clientTestFake) read() {
 	for {
-		_, p, err := c.ws.ReadMessage()
+		msgType, p, err := c.ws.ReadMessage()
 		if err != nil {
-			continue
+			return
 		}
 		if string(p) != "" {
-			c.output = append(c.output, p)
+			if msgType == websocket.TextMessage {
+				c.output[websocket.TextMessage] = append(c.output[websocket.TextMessage], p)
+			} else if msgType == websocket.BinaryMessage {
+				c.output[websocket.BinaryMessage] = append(c.output[websocket.BinaryMessage], p)
+			}
 		}
 	}
 }
 
 func NewclientTestFake() *clientTestFake {
 	c := &clientTestFake{}
+	c.client = http.Client{}
 	c.domain = "ws://localhost:8080/ws"
 	ws, _, err := websocket.DefaultDialer.Dial(c.domain, nil)
+	c.output = make(map[int][][]byte)
+	//fmt.Println(c.output)
 	c.ws = ws
 	if err != nil {
 		log.Fatalf("error in clientTestFake establishing connection with whserver, %v", err.Error())
@@ -71,6 +77,14 @@ func (w webhookTrigger) sendPOSTRequest() {
 	if err != nil {
 		log.Fatalf("error making post request to the server, %v", err.Error())
 	}
+}
+
+func (w webhookTrigger) sentGETRequest() *http.Response {
+	resp, err := http.Get(w.url)
+	if err != nil {
+		log.Fatalf("error making get request to the server, %v", err.Error())
+	}
+	return resp
 }
 
 func TestRandomURL(t *testing.T) {
@@ -139,6 +153,9 @@ func TestForwardingMessage(t *testing.T) {
 
 		// create a new client
 		c := NewclientTestFake()
+		defer c.ws.Close()
+
+		// listend to the message from the server
 		go func() {
 			c.read()
 		}()
@@ -154,56 +171,53 @@ func TestForwardingMessage(t *testing.T) {
 		}
 	})
 
-	t.Run("server encodes the request into binary", func(t *testing.T) {
-		data := []byte("this is the body of the request")
-		reqBody := bytes.NewBuffer(data)
-		req, err := http.NewRequest(http.MethodPost, "http://localhost:8080", reqBody)
-		if err != nil {
-			t.Errorf("%v", err)
+	t.Run("server forwards only post request", func(t *testing.T) {
+		// create a new client
+		c := NewclientTestFake()
+		defer c.ws.Close()
+
+		// listend to the message from the server
+		go func() {
+			c.read()
+		}()
+
+		// make post request to the server
+		whTrigger := webhookTrigger{
+			url: c.url,
 		}
-
-		buf := server.EncodeRequest(req)
-		got := server.DecodeRequest(buf)
-
-		assertRequest(t, *got, *req)
+		resp := whTrigger.sentGETRequest()
+		if resp.StatusCode == http.StatusAccepted {
+			t.Errorf("get requets not ignored got statusAccepted, %d", resp.StatusCode)
+		}
 	})
-}
+	t.Run("server sends the post request it receives in binary format to client", func(t *testing.T) {
 
-func assertRequest(t testing.TB, got, want http.Request) {
-	t.Helper()
-	fields := []string{"Method", "Proto", "ProtoMajor", "ProtoMinor", "Header", "URL", "RequestURI",
-		"ContentLength", "TransferEncoding", "Host", "PostForm", "Form", "RemoteAddr"}
-	assertStruct(t, fields, got, want)
+		// create a new clent
+		c := NewclientTestFake()
+		defer c.ws.Close()
 
-	// compare bodies
-	if got.Body == nil {
-		got.Body = io.NopCloser(bytes.NewBuffer([]byte{}))
-	}
-	if want.Body == nil {
-		want.Body = io.NopCloser(bytes.NewBuffer([]byte{}))
-	}
-	gotBody, _ := io.ReadAll(got.Body)
-	wantBody, _ := io.ReadAll(want.Body)
+		// listend to the message from the server
+		go func() {
+			c.read()
+		}()
 
-	got.Body = io.NopCloser(bytes.NewBuffer(gotBody))
-	want.Body = io.NopCloser(bytes.NewBuffer(wantBody))
-
-	if string(gotBody) != string(wantBody) {
-		t.Errorf("different Bodies, got %q, want %q", string(gotBody), string(wantBody))
-	}
-
-}
-
-func assertStruct(t testing.TB, fields []string, structA, structB interface{}) {
-	t.Helper()
-	valA := reflect.ValueOf(structA)
-	valB := reflect.ValueOf(structB)
-
-	for _, field := range fields {
-		if !reflect.DeepEqual(valA.FieldByName(field).Interface(), valB.FieldByName(field).Interface()) {
-			t.Errorf("different %s, got %v, want %v", field, valA.FieldByName(field), valB.FieldByName(field))
+		// create post requst
+		data := []byte("this is the body of the new post request")
+		body := bytes.NewBuffer(data)
+		req, err := http.NewRequest(http.MethodPost, c.url, body)
+		if err != nil {
+			t.Errorf("error creating request, %v", err)
 		}
-	}
+
+		// make post request
+		resp, _ := c.client.Do(req)
+		fmt.Println(resp.StatusCode)
+
+		// check if the data received by the client
+		if len(c.output[websocket.BinaryMessage]) == 0 {
+			t.Fatalf("didn't receive any binary message")
+		}
+	})
 }
 
 func runGoFile(t testing.TB, loc string, filename string) (*exec.Cmd, func()) {
