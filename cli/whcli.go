@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
+	"reflect"
 	"time"
 	"whtester/serialize"
 
@@ -15,14 +17,14 @@ type client struct {
 	Conn *websocket.Conn
 }
 
-func (c *client) PrintMessage(w io.Writer) {
+func (c *client) PrintMessage(w io.Writer, fields []string) error {
 
-	data, err := read(c.Conn)
+	data, err := read(c.Conn, fields)
 	if err != nil {
-		return
+		return err
 	}
 	fmt.Fprint(w, data)
-
+	return nil
 }
 
 func Newclient() *client {
@@ -32,7 +34,7 @@ func Newclient() *client {
 	return c
 }
 
-func read(ws *websocket.Conn) (string, error) {
+func read(ws *websocket.Conn, fields []string) (string, error) {
 	for {
 		msgType, data, err := ws.ReadMessage()
 		if err != nil {
@@ -43,21 +45,30 @@ func read(ws *websocket.Conn) (string, error) {
 				return "\n" + string(data), nil
 			} else if msgType == websocket.BinaryMessage {
 				req := serialize.DecodeRequest(data)
-				body, err := io.ReadAll(req.Body)
-				if err != nil {
-					log.Fatalf("error reading body of request, got error %v", err)
-				}
-				method := req.Method
-				return fmt.Sprintf("Body :%s\nMethod :%s", string(body), method), nil
+				res := readRequestFields(fields, *req)
+				return res, nil
 			}
 		}
 	}
 }
 
+func readRequestFields(fields []string, req http.Request) string {
+	out := ""
+	r := reflect.ValueOf(req)
+	for _, f := range fields {
+		if r.FieldByName(f) == reflect.ValueOf(nil) {
+			fmt.Printf("does not have field, %s", f)
+		}
+		field := fmt.Sprintf("\n%s :%v", f, r.FieldByName(f).Interface())
+		out += field
+	}
+	return out
+}
+
 func readURL(ws *websocket.Conn) string {
 	result := make(chan string, 1)
 	go func() {
-		data, _ := read(ws)
+		data, _ := read(ws, nil)
 		result <- data
 		close(result)
 	}()

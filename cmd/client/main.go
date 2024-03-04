@@ -13,9 +13,15 @@ func main() {
 	c := cli.Newclient()
 	defer c.Conn.Close()
 	fmt.Printf("link : %s", c.URL)
+
+	// read fields from a json file
+	fields := []string{"Header", "Method", "Body"}
 	go func() {
 		for {
-			c.PrintMessage(os.Stdout)
+			err := c.PrintMessage(os.Stdout, fields)
+			if err != nil {
+				return
+			}
 		}
 	}()
 	wg.Wait()

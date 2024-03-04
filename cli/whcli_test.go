@@ -68,7 +68,7 @@ func TestWhCLI(t *testing.T) {
 		defer c.Conn.Close()
 		want := "this is a temp message"
 		s.WriteMessage(want)
-		c.PrintMessage(buf)
+		c.PrintMessage(buf, nil)
 		if buf.String() == "" {
 			t.Error("expected a message to be writtem")
 		}
@@ -83,7 +83,7 @@ func TestWhCLI(t *testing.T) {
 
 		msg := "message sent"
 		s.WriteMessage(msg)
-		c.PrintMessage(buf)
+		c.PrintMessage(buf, nil)
 		want := "\n" + msg
 		if buf.String() != want {
 			t.Errorf("got %q, want %q", buf.String(), want)
@@ -98,9 +98,9 @@ func TestWhCLI(t *testing.T) {
 		defer c.Conn.Close()
 
 		s.WriteEncodedRequest("this is a test")
-		fields := []string{"Body", "Method"}
+		fields := []string{"Body", "Method", "URL", "Header"}
 
-		c.PrintMessage(buf)
+		c.PrintMessage(buf, fields)
 		got := buf.String()
 		for _, field := range fields {
 			if !strings.Contains(got, field) {
