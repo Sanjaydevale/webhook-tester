@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"time"
+	"whtester/serialize"
 
 	"github.com/gorilla/websocket"
 )
@@ -20,7 +21,7 @@ func (c *client) PrintMessage(w io.Writer) {
 	if err != nil {
 		return
 	}
-	fmt.Fprint(w, "\n"+data)
+	fmt.Fprint(w, data)
 
 }
 
@@ -33,12 +34,22 @@ func Newclient() *client {
 
 func read(ws *websocket.Conn) (string, error) {
 	for {
-		_, data, err := ws.ReadMessage()
+		msgType, data, err := ws.ReadMessage()
 		if err != nil {
 			return "", err
 		}
 		if len(data) != 0 {
-			return string(data), nil
+			if msgType == websocket.TextMessage {
+				return "\n" + string(data), nil
+			} else if msgType == websocket.BinaryMessage {
+				req := serialize.DecodeRequest(data)
+				body, err := io.ReadAll(req.Body)
+				if err != nil {
+					log.Fatalf("error reading body of request, got error %v", err)
+				}
+				method := req.Method
+				return fmt.Sprintf("Body :%s\nMethod :%s", string(body), method), nil
+			}
 		}
 	}
 }

@@ -3,8 +3,10 @@ package cli_test
 import (
 	"bytes"
 	"net/http"
+	"strings"
 	"testing"
 	"whtester/cli"
+	"whtester/serialize"
 
 	"github.com/gorilla/websocket"
 )
@@ -16,6 +18,13 @@ type serverTestFake struct {
 
 func (s serverTestFake) WriteMessage(msg string) {
 	s.ws.WriteMessage(websocket.TextMessage, []byte(msg))
+}
+
+func (s serverTestFake) WriteEncodedRequest(body string) {
+	b := bytes.NewBuffer([]byte(body))
+	req, _ := http.NewRequest(http.MethodPost, "tempurl", b)
+	msg := serialize.EncodeRequest(req)
+	s.ws.WriteMessage(websocket.BinaryMessage, msg)
 }
 
 func (s *serverTestFake) Start() {
@@ -78,6 +87,25 @@ func TestWhCLI(t *testing.T) {
 		want := "\n" + msg
 		if buf.String() != want {
 			t.Errorf("got %q, want %q", buf.String(), want)
+		}
+	})
+
+	t.Run("cli prints only the specified fields of the request", func(t *testing.T) {
+
+		buf := new(bytes.Buffer)
+
+		c := cli.Newclient()
+		defer c.Conn.Close()
+
+		s.WriteEncodedRequest("this is a test")
+		fields := []string{"Body", "Method"}
+
+		c.PrintMessage(buf)
+		got := buf.String()
+		for _, field := range fields {
+			if !strings.Contains(got, field) {
+				t.Errorf("output does not contain field %q, got %q", field, got)
+			}
 		}
 	})
 }
