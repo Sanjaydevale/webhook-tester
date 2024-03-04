@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -10,6 +11,34 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+type localServerTestFake struct {
+	req      http.Request
+	received bool
+	srv      *http.Server
+}
+
+func (l *localServerTestFake) Start() {
+	fmt.Println(l.srv.ListenAndServe())
+}
+
+func (l *localServerTestFake) Close() {
+	l.srv.Close()
+}
+
+func (l *localServerTestFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	l.req = *r
+	l.received = true
+}
+
+func NewLocalServerTestFake(port string) *localServerTestFake {
+	lsrv := &localServerTestFake{
+		received: false,
+	}
+	srv := &http.Server{Addr: port, Handler: lsrv}
+	lsrv.srv = srv
+	return lsrv
+}
 
 type serverTestFake struct {
 	ws  *websocket.Conn
@@ -68,7 +97,7 @@ func TestWhCLI(t *testing.T) {
 		defer c.Conn.Close()
 		want := "this is a temp message"
 		s.WriteMessage(want)
-		c.PrintMessage(buf, nil)
+		c.Listen(buf, nil, "")
 		if buf.String() == "" {
 			t.Error("expected a message to be writtem")
 		}
@@ -83,7 +112,7 @@ func TestWhCLI(t *testing.T) {
 
 		msg := "message sent"
 		s.WriteMessage(msg)
-		c.PrintMessage(buf, nil)
+		c.Listen(buf, nil, "")
 		want := "\n" + msg
 		if buf.String() != want {
 			t.Errorf("got %q, want %q", buf.String(), want)
@@ -91,6 +120,11 @@ func TestWhCLI(t *testing.T) {
 	})
 
 	t.Run("cli prints only the specified fields of the request", func(t *testing.T) {
+
+		// create a new local server
+		lsrv := NewLocalServerTestFake(":5555")
+		go lsrv.Start()
+		defer lsrv.Close()
 
 		buf := new(bytes.Buffer)
 
@@ -100,12 +134,34 @@ func TestWhCLI(t *testing.T) {
 		s.WriteEncodedRequest("this is a test")
 		fields := []string{"Body", "Method", "URL", "Header"}
 
-		c.PrintMessage(buf, fields)
+		c.Listen(buf, fields, ":5555")
 		got := buf.String()
 		for _, field := range fields {
 			if !strings.Contains(got, field) {
 				t.Errorf("output does not contain field %q, got %q", field, got)
 			}
+		}
+	})
+
+	t.Run("client forwards the received request to locally running server", func(t *testing.T) {
+		// create a new client
+		c := cli.Newclient()
+		defer c.Conn.Close()
+
+		// create a new local server
+		lsrv := NewLocalServerTestFake(":5555")
+		go lsrv.Start()
+		defer lsrv.Close()
+
+		// write message to cli
+		s.WriteEncodedRequest("this is a test")
+
+		buf := new(bytes.Buffer)
+		c.Listen(buf, []string{"Body"}, ":5555")
+
+		// check if the local server received the message
+		if lsrv.received == false {
+			t.Errorf("local server didn't receive any request")
 		}
 	})
 }

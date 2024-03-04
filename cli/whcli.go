@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"reflect"
 	"time"
 	"whtester/serialize"
@@ -13,40 +14,52 @@ import (
 )
 
 type client struct {
-	URL  string
-	Conn *websocket.Conn
+	URL        string
+	Conn       *websocket.Conn
+	httpClient *http.Client
 }
 
-func (c *client) PrintMessage(w io.Writer, fields []string) error {
+func (c *client) Listen(w io.Writer, fields []string, port string) error {
 
-	data, err := read(c.Conn, fields)
+	data, msgType, err := read(c.Conn)
 	if err != nil {
 		return err
 	}
-	fmt.Fprint(w, data)
+	if msgType == websocket.TextMessage {
+		fmt.Fprint(w, "\n"+string(data))
+	} else if msgType == websocket.BinaryMessage {
+		req := serialize.DecodeRequest(data)
+		fmt.Fprint(w, readRequestFields(fields, *req))
+		req.URL, _ = url.Parse(fmt.Sprintf("http://localhost%s", port))
+		req.RequestURI = ""
+		_, err := c.httpClient.Do(req)
+		if err != nil {
+			log.Fatalf("\ncli could not forwards message to local server, %v", err)
+		}
+	}
 	return nil
 }
 
 func Newclient() *client {
 	c := &client{}
+	httpClient := &http.Client{}
+	c.httpClient = httpClient
 	c.Conn = NewConn("ws://localhost:8080/ws")
 	c.URL = readURL(c.Conn)
 	return c
 }
 
-func read(ws *websocket.Conn, fields []string) (string, error) {
+func read(ws *websocket.Conn) ([]byte, int, error) {
 	for {
 		msgType, data, err := ws.ReadMessage()
 		if err != nil {
-			return "", err
+			return []byte(""), -1, err
 		}
 		if len(data) != 0 {
 			if msgType == websocket.TextMessage {
-				return "\n" + string(data), nil
+				return data, websocket.TextMessage, nil
 			} else if msgType == websocket.BinaryMessage {
-				req := serialize.DecodeRequest(data)
-				res := readRequestFields(fields, *req)
-				return res, nil
+				return data, websocket.BinaryMessage, nil
 			}
 		}
 	}
@@ -68,8 +81,8 @@ func readRequestFields(fields []string, req http.Request) string {
 func readURL(ws *websocket.Conn) string {
 	result := make(chan string, 1)
 	go func() {
-		data, _ := read(ws, nil)
-		result <- data
+		data, _, _ := read(ws)
+		result <- string(data)
 		close(result)
 	}()
 	select {

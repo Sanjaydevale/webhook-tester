@@ -18,7 +18,7 @@ func main() {
 	fields := []string{"Header", "Method", "Body"}
 	go func() {
 		for {
-			err := c.PrintMessage(os.Stdout, fields)
+			err := c.Listen(os.Stdout, fields, ":5555")
 			if err != nil {
 				return
 			}

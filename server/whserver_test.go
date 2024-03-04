@@ -210,8 +210,7 @@ func TestForwardingMessage(t *testing.T) {
 		}
 
 		// make post request
-		resp, _ := c.client.Do(req)
-		fmt.Println(resp.StatusCode)
+		c.client.Do(req)
 
 		// check if the data received by the client
 		if len(c.output[websocket.BinaryMessage]) == 0 {
