@@ -57,6 +57,7 @@ func (s serverTestFake) WriteEncodedRequest(body string) {
 }
 
 func (s *serverTestFake) Start() {
+	fmt.Println("server started")
 	http.ListenAndServe(":8080", s.mux)
 }
 
@@ -81,7 +82,7 @@ func TestWhCLI(t *testing.T) {
 	t.Run("cli establishes websocket connection with the server", func(t *testing.T) {
 
 		// try to connect to the server
-		c := cli.Newclient()
+		c := cli.Newclient("ws://localhost:8080/ws")
 		defer c.Conn.Close()
 		if c.Conn == nil {
 			t.Fatal("cli didn't establish a connection with the server")
@@ -93,11 +94,11 @@ func TestWhCLI(t *testing.T) {
 		buf := new(bytes.Buffer)
 
 		// make clinet connection
-		c := cli.Newclient()
+		c := cli.Newclient("ws://localhost:8080/ws")
 		defer c.Conn.Close()
 		want := "this is a temp message"
 		s.WriteMessage(want)
-		c.Listen(buf, nil, "")
+		c.Listen(buf, nil, "http://localhost:5555")
 		if buf.String() == "" {
 			t.Error("expected a message to be writtem")
 		}
@@ -107,7 +108,7 @@ func TestWhCLI(t *testing.T) {
 
 		buf := new(bytes.Buffer)
 
-		c := cli.Newclient()
+		c := cli.Newclient("ws://localhost:8080/ws")
 		defer c.Conn.Close()
 
 		msg := "message sent"
@@ -128,13 +129,13 @@ func TestWhCLI(t *testing.T) {
 
 		buf := new(bytes.Buffer)
 
-		c := cli.Newclient()
+		c := cli.Newclient("ws://localhost:8080/ws")
 		defer c.Conn.Close()
 
 		s.WriteEncodedRequest("this is a test")
 		fields := []string{"Body", "Method", "URL", "Header"}
 
-		c.Listen(buf, fields, ":5555")
+		c.Listen(buf, fields, "http://localhost:5555")
 		got := buf.String()
 		for _, field := range fields {
 			if !strings.Contains(got, field) {
@@ -145,7 +146,7 @@ func TestWhCLI(t *testing.T) {
 
 	t.Run("client forwards the received request to locally running server", func(t *testing.T) {
 		// create a new client
-		c := cli.Newclient()
+		c := cli.Newclient("ws://localhost:8080/ws")
 		defer c.Conn.Close()
 
 		// create a new local server
@@ -157,7 +158,7 @@ func TestWhCLI(t *testing.T) {
 		s.WriteEncodedRequest("this is a test")
 
 		buf := new(bytes.Buffer)
-		c.Listen(buf, []string{"Body"}, ":5555")
+		c.Listen(buf, []string{"Body"}, "http://localhost:5555")
 
 		// check if the local server received the message
 		if lsrv.received == false {

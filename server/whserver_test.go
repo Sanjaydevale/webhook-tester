@@ -127,7 +127,7 @@ func TestRandomURL(t *testing.T) {
 		defer close()
 		time.Sleep(3 * time.Second)
 
-		c := cli.Newclient()
+		c := cli.Newclient("ws://localhost:8080/ws")
 		defer c.Conn.Close()
 
 		u := c.URL

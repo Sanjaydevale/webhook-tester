@@ -19,7 +19,7 @@ type client struct {
 	httpClient *http.Client
 }
 
-func (c *client) Listen(w io.Writer, fields []string, port string) error {
+func (c *client) Listen(w io.Writer, fields []string, urlstr string) error {
 
 	data, msgType, err := read(c.Conn)
 	if err != nil {
@@ -30,7 +30,7 @@ func (c *client) Listen(w io.Writer, fields []string, port string) error {
 	} else if msgType == websocket.BinaryMessage {
 		req := serialize.DecodeRequest(data)
 		fmt.Fprint(w, readRequestFields(fields, *req))
-		req.URL, _ = url.Parse(fmt.Sprintf("http://localhost%s", port))
+		req.URL, _ = url.Parse(urlstr)
 		req.RequestURI = ""
 		_, err := c.httpClient.Do(req)
 		if err != nil {
@@ -40,11 +40,11 @@ func (c *client) Listen(w io.Writer, fields []string, port string) error {
 	return nil
 }
 
-func Newclient() *client {
+func Newclient(serverURL string) *client {
 	c := &client{}
 	httpClient := &http.Client{}
 	c.httpClient = httpClient
-	c.Conn = NewConn("ws://localhost:8080/ws")
+	c.Conn = NewConn(serverURL)
 	c.URL = readURL(c.Conn)
 	return c
 }
@@ -80,6 +80,7 @@ func readRequestFields(fields []string, req http.Request) string {
 
 func readURL(ws *websocket.Conn) string {
 	result := make(chan string, 1)
+	// listen to the server
 	go func() {
 		data, _, _ := read(ws)
 		result <- string(data)
