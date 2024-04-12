@@ -19,25 +19,40 @@ type client struct {
 	httpClient *http.Client
 }
 
-func (c *client) Listen(w io.Writer, fields []string, urlstr string) error {
+func (c *client) Stream(w io.Writer, fields []string, port int) {
+	for {
+		c.Read(w, fields, port)
+	}
+}
 
-	data, msgType, err := read(c.Conn)
+func (c *client) Read(w io.Writer, fields []string, port int) {
+	msgType, data, err := c.Conn.ReadMessage()
 	if err != nil {
-		return err
+		log.Fatalf("\nerror reading message from server, %v\n", err)
+		return
 	}
 	if msgType == websocket.TextMessage {
 		fmt.Fprint(w, "\n"+string(data))
 	} else if msgType == websocket.BinaryMessage {
+		// client recevied encoded HTTP POST request
+		// decode binary  blob into HTTP request struct
 		req := serialize.DecodeRequest(data)
+
+		// print the specified fields
 		fmt.Fprint(w, readRequestFields(fields, *req))
-		req.URL, _ = url.Parse(urlstr)
-		req.RequestURI = ""
-		_, err := c.httpClient.Do(req)
-		if err != nil {
-			log.Fatalf("\ncli could not forwards message to local server, %v", err)
-		}
+
+		// forward request to locally running program
+		forwardRequest(c, req, port)
 	}
-	return nil
+}
+
+func forwardRequest(c *client, req *http.Request, port int) {
+	req.URL, _ = url.Parse(fmt.Sprintf("http://localhost:%d", port))
+	req.RequestURI = ""
+	_, err := c.httpClient.Do(req)
+	if err != nil {
+		log.Fatalf("\ncli could not forwards message to local server, %v", err)
+	}
 }
 
 func Newclient(serverURL string) *client {
@@ -49,22 +64,7 @@ func Newclient(serverURL string) *client {
 	return c
 }
 
-func read(ws *websocket.Conn) ([]byte, int, error) {
-	for {
-		msgType, data, err := ws.ReadMessage()
-		if err != nil {
-			return []byte(""), -1, err
-		}
-		if len(data) != 0 {
-			if msgType == websocket.TextMessage {
-				return data, websocket.TextMessage, nil
-			} else if msgType == websocket.BinaryMessage {
-				return data, websocket.BinaryMessage, nil
-			}
-		}
-	}
-}
-
+// reads only specifies HTTP request fields and returns them in string format
 func readRequestFields(fields []string, req http.Request) string {
 	out := ""
 	r := reflect.ValueOf(req)
@@ -82,10 +82,17 @@ func readURL(ws *websocket.Conn) string {
 	result := make(chan string, 1)
 	// listen to the server
 	go func() {
-		data, _, _ := read(ws)
+		msgType, data, err := ws.ReadMessage()
+		if err != nil {
+			log.Fatalf("error reading URL from server, %v", err)
+		}
+		if msgType != websocket.TextMessage {
+			log.Fatalf("expected to received URL from server, go message of type %d", msgType)
+		}
 		result <- string(data)
 		close(result)
 	}()
+
 	select {
 	case url := <-result:
 		return url

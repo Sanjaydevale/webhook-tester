@@ -30,15 +30,8 @@ func main() {
 	defer c.Conn.Close()
 	fmt.Printf("link : %s", c.URL)
 
-	// read fields from a json file
+	// should read fields from a json file
 	fields := []string{"Header", "Method", "Body"}
-	go func() {
-		for {
-			err := c.Listen(os.Stdout, fields, fmt.Sprintf("http://localhost:%d", port))
-			if err != nil {
-				return
-			}
-		}
-	}()
+	go c.Stream(os.Stdout, fields, port)
 	wg.Wait()
 }

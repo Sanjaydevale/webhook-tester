@@ -98,7 +98,7 @@ func TestWhCLI(t *testing.T) {
 		defer c.Conn.Close()
 		want := "this is a temp message"
 		s.WriteMessage(want)
-		c.Listen(buf, nil, "http://localhost:5555")
+		c.Read(buf, nil, 5555)
 		if buf.String() == "" {
 			t.Error("expected a message to be writtem")
 		}
@@ -113,7 +113,7 @@ func TestWhCLI(t *testing.T) {
 
 		msg := "message sent"
 		s.WriteMessage(msg)
-		c.Listen(buf, nil, "")
+		c.Read(buf, nil, 5555)
 		want := "\n" + msg
 		if buf.String() != want {
 			t.Errorf("got %q, want %q", buf.String(), want)
@@ -135,7 +135,7 @@ func TestWhCLI(t *testing.T) {
 		s.WriteEncodedRequest("this is a test")
 		fields := []string{"Body", "Method", "URL", "Header"}
 
-		c.Listen(buf, fields, "http://localhost:5555")
+		c.Read(buf, fields, 5555)
 		got := buf.String()
 		for _, field := range fields {
 			if !strings.Contains(got, field) {
@@ -158,7 +158,7 @@ func TestWhCLI(t *testing.T) {
 		s.WriteEncodedRequest("this is a test")
 
 		buf := new(bytes.Buffer)
-		c.Listen(buf, []string{"Body"}, "http://localhost:5555")
+		c.Read(buf, []string{"Body"}, 5555)
 
 		// check if the local server received the message
 		if lsrv.received == false {
