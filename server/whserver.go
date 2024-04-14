@@ -1,9 +1,10 @@
 package server
 
 import (
+	"crypto/rand"
 	"fmt"
 	"log"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"net/url"
 	"strings"
@@ -23,15 +24,15 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h(w, r)
 }
 
-type Subdomains map[string]http.Handler
+type Manager map[string]http.Handler
 
-func (s Subdomains) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if handler := s[r.Host]; handler != nil {
 		handler.ServeHTTP(w, r)
 	}
 }
 
-func (s *Subdomains) AddNewClient(u string, ws *websocket.Conn) {
+func (s *Manager) AddNewClient(u string, ws *websocket.Conn) {
 	uStruct, _ := url.Parse(u)
 	(*s)[uStruct.Host] = handler(func(w http.ResponseWriter, r *http.Request) {
 		//handle client
@@ -47,17 +48,26 @@ func (s *Subdomains) AddNewClient(u string, ws *websocket.Conn) {
 
 // Generates a random string and appends to the provided scheme and domain
 func GenerateRandomURL(scheme string, domain string, subDomainLen int) string {
-	var charSet = []rune("abcdefghijklmnopqrstuvwxyz0123456789")
-	var randSubDomain []rune
-	for len(randSubDomain) != subDomainLen {
-		randSubDomain = append(randSubDomain, charSet[rand.Int()%len(charSet)])
-	}
+	var randSubDomain = GenerateRandomString(subDomainLen)
 	u := url.URL{
 		Scheme: scheme,
-		Host:   strings.Join([]string{string(randSubDomain), domain}, "."),
+		Host:   strings.Join([]string{randSubDomain, domain}, "."),
 		Path:   "",
 	}
 	return u.String()
+}
+
+func GenerateRandomString(strLen int) string {
+	var charSet = []rune("abcdefghijklmnopqrstuvwxyz0123456789")
+	var randStr = make([]rune, strLen)
+	for i := 0; i < strLen; i++ {
+		index, err := rand.Int(rand.Reader, big.NewInt(int64(strLen)))
+		if err != nil {
+			log.Fatalf("unable to generate random number, %v", err)
+		}
+		randStr[i] = charSet[index.Int64()]
+	}
+	return string(randStr)
 }
 
 // Check if the given url is valid
@@ -72,8 +82,7 @@ func CheckValidURL(u string) bool {
 	return true
 }
 
-func NewWebHookHandler() *http.ServeMux {
-	subDomainsHandler := Subdomains{}
+func NewWebHookHandler(clientsManager Manager) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		ws, err := upgrader.Upgrade(w, r, nil)
@@ -81,10 +90,10 @@ func NewWebHookHandler() *http.ServeMux {
 			log.Fatalf("error establishing websocket connection")
 		}
 		u := []byte(GenerateRandomURL("http", "localhost:8080", 8))
-		subDomainsHandler.AddNewClient(string(u), ws)
+		clientsManager.AddNewClient(string(u), ws)
 		fmt.Printf("\nnew client: %s", u)
 		ws.WriteMessage(websocket.TextMessage, u)
 	})
-	mux.Handle("/", subDomainsHandler)
+	mux.Handle("/", clientsManager)
 	return mux
 }

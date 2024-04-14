@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -119,33 +117,13 @@ func TestRandomURL(t *testing.T) {
 			urlList = append(urlList, url)
 		}
 	})
-
-	t.Run("server listens on generated URL", func(t *testing.T) {
-
-		run, close := runGoFile(t, "../cmd/server/main.go", "main")
-		run.Start()
-		defer close()
-		time.Sleep(3 * time.Second)
-
-		c := cli.Newclient("ws://localhost:8080/ws")
-		defer c.Conn.Close()
-
-		u := c.URL
-		res, err := http.Head(u)
-		if err != nil {
-			t.Errorf("error making http HEAD, %s", err.Error())
-		}
-		if res.StatusCode == 404 {
-			t.Errorf("server is not listenting on URL, %s", u)
-		}
-	})
 }
 
 func TestForwardingMessage(t *testing.T) {
-	// run server
-	run, close := runGoFile(t, "../cmd/server/main.go", "main")
-	run.Start()
+	// start server
+	close := startServer()
 	defer close()
+
 	// wait for the server to start
 	time.Sleep(1 * time.Second)
 
@@ -219,20 +197,35 @@ func TestForwardingMessage(t *testing.T) {
 	})
 }
 
-func runGoFile(t testing.TB, loc string, filename string) (*exec.Cmd, func()) {
-	if _, err := os.Stat(loc); err != nil {
-		t.Fatalf("error running go file %s, error: %v", loc, err.Error())
+func TestClienConnection(t *testing.T) {
+	t.Run("server listens on generated URL", func(t *testing.T) {
+		// start server
+		close := startServer()
+		defer close()
+
+		c := cli.Newclient("ws://localhost:8080/ws")
+		defer c.Conn.Close()
+
+		u := c.URL
+		res, err := http.Head(u)
+		if err != nil {
+			t.Errorf("error making http HEAD, %s", err.Error())
+		}
+		if res.StatusCode == 404 {
+			t.Errorf("server is not listenting on URL, %s", u)
+		}
+	})
+}
+
+func startServer() func() error {
+	clientManager := server.Manager{}
+	mux := server.NewWebHookHandler(clientManager)
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
 	}
-
-	buildcmd := exec.Command("go", "build", loc)
-	buildcmd.Run()
-
-	runcmd := exec.Command(fmt.Sprintf("./%s", filename))
-
-	cleancmd := func() {
-		delFile := exec.Command("rm", fmt.Sprintf("./%s", filename))
-		delFile.Run()
-		runcmd.Process.Kill()
-	}
-	return runcmd, cleancmd
+	go func() {
+		fmt.Println(srv.ListenAndServe())
+	}()
+	return srv.Close
 }
