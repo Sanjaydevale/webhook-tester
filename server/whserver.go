@@ -8,9 +8,15 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 	"whtester/serialize"
 
 	"github.com/gorilla/websocket"
+)
+
+var (
+	PongWaitTime = 1 * time.Minute
+	PingWaitTime = (PongWaitTime * 9) / 10
 )
 
 var upgrader = websocket.Upgrader{
@@ -34,6 +40,7 @@ func (s Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Manager) AddNewClient(u string, ws *websocket.Conn) {
 	uStruct, _ := url.Parse(u)
+	// handle client conn
 	(*s)[uStruct.Host] = handler(func(w http.ResponseWriter, r *http.Request) {
 		//handle client
 		if r.Method == http.MethodPost {
@@ -44,6 +51,37 @@ func (s *Manager) AddNewClient(u string, ws *websocket.Conn) {
 			w.WriteHeader(http.StatusForbidden)
 		}
 	})
+	go s.HandleClient(u, ws)
+}
+
+func (m *Manager) RemoveClient(u string, ws *websocket.Conn) {
+	clientURL, _ := url.Parse(u)
+	clientKey := clientURL.Host
+	fmt.Println("\nremoved client : ", u)
+	ws.Close()
+	delete(*m, clientKey)
+}
+
+func (m *Manager) HandleClient(u string, ws *websocket.Conn) {
+	ws.SetReadDeadline(time.Now().Add(PongWaitTime))
+	defer m.RemoveClient(u, ws)
+	ticker := time.NewTicker(PingWaitTime)
+	// send pings to client
+	go func() {
+		for {
+			<-ticker.C
+			ws.WriteMessage(websocket.PingMessage, []byte(""))
+		}
+	}()
+	// read message from client to trigger pong handler
+	for {
+		_, _, err := ws.ReadMessage()
+		// if err != nil connection is closed
+		// remove the client on returning
+		if err != nil {
+			return
+		}
+	}
 }
 
 // Generates a random string and appends to the provided scheme and domain
