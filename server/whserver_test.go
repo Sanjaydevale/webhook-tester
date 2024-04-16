@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"whtester/cli"
 	"whtester/server"
 
 	"github.com/gorilla/websocket"
@@ -122,7 +121,7 @@ func TestRandomURL(t *testing.T) {
 
 func TestForwardingMessage(t *testing.T) {
 	// start server
-	close := startServer()
+	close := startServer(t)
 	defer close()
 
 	// wait for the server to start
@@ -199,6 +198,7 @@ func TestForwardingMessage(t *testing.T) {
 }
 
 func TestClienConnection(t *testing.T) {
+
 	// set PingWait and PongWait for server
 	server.PongWaitTime = 1 * time.Second
 	server.PingWaitTime = (server.PongWaitTime * 9) / 10
@@ -212,81 +212,111 @@ func TestClienConnection(t *testing.T) {
 	}
 	go srv.ListenAndServe()
 	defer srv.Close()
-	t.Run("server listens on generated URL", func(t *testing.T) {
 
-		c := cli.Newclient("ws://localhost:8080/ws")
-		defer c.Conn.Close()
+	t.Run("parallel test group", func(t *testing.T) {
+		t.Run("server listens on generated URL", func(t *testing.T) {
+			t.Parallel()
+			c := NewclientTestFake()
+			defer c.ws.Close()
 
-		u := c.URL
-		res, err := http.Head(u)
-		if err != nil {
-			t.Errorf("error making http HEAD, %s", err.Error())
-		}
-		if res.StatusCode == 404 {
-			t.Errorf("server is not listenting on URL, %s", u)
-		}
-	})
-
-	t.Run("server sends ping messages to the client", func(t *testing.T) {
-		received := make(chan bool)
-		// make a new client connection
-		c := NewclientTestFake()
-		c.ws.SetPingHandler(func(appData string) error {
-			received <- true
-			return nil
-		})
-		go c.read()
-		select {
-		case <-received:
-			return
-		case <-time.After(2 * time.Second):
-			t.Fatal("didn't receive any pong messages from server")
-		}
-	})
-
-	t.Run("disconnected client connection is deleted from Manger", func(t *testing.T) {
-		// create a new client connection
-		c := NewclientTestFake()
-		// client does not replay to ping's from server
-		c.ws.SetPingHandler(func(appData string) error {
-			return nil
-		})
-
-		// wait for pong timeout to occure in server
-		time.Sleep((server.PongWaitTime * 13) / 10)
-
-		// check if client still exists is Manager map
-		u, _ := url.Parse(c.url)
-		_, ok := (*manager)[u.Host]
-		if ok == true {
-			t.Fatal("client is present in manager")
-		}
-
-		// check if websocket connection is closed
-		var err error
-		var closed = make(chan bool)
-		go func() {
-			_, _, err = c.ws.ReadMessage()
+			u := c.url
+			res, err := http.Head(u)
 			if err != nil {
-				closed <- true
+				t.Errorf("error making http HEAD, %s", err.Error())
 			}
-		}()
+			if res.StatusCode == 404 {
+				t.Errorf("server is not listenting on URL, %s", u)
+			}
+		})
 
-		select {
-		case <-closed:
-			return
-		case <-time.After(4 * time.Second):
-			t.Fatal("websocket connection is not closed")
-		}
+		t.Run("server sends ping messages to the client", func(t *testing.T) {
+			t.Parallel()
+			received := make(chan bool)
+			// make a new client connection
+			c := NewclientTestFake()
+			c.ws.SetPingHandler(func(appData string) error {
+				received <- true
+				return nil
+			})
+			go c.read()
+			select {
+			case <-received:
+				return
+			case <-time.After(2 * time.Second):
+				t.Fatal("didn't receive any pong messages from server")
+			}
+		})
+
+		t.Run("disconnected client connection is deleted from Manager", func(t *testing.T) {
+			t.Parallel()
+			// create a new client connection
+			c := NewclientTestFake()
+			// client does not replay to ping's from server
+			c.ws.SetPingHandler(func(appData string) error {
+				return nil
+			})
+
+			// wait for pong timeout to occure in server
+			time.Sleep((server.PongWaitTime * 13) / 10)
+
+			// check if client still exists is Manager map
+			u, _ := url.Parse(c.url)
+			_, ok := (*manager)[u.Host]
+			if ok == true {
+				t.Fatal("client is present in manager")
+			}
+
+			// check if websocket connection is closed
+			checkClientConnectionClose(t, manager, c)
+
+		})
+
+		t.Run("server removes client if, client closes websocket connection", func(t *testing.T) {
+			t.Parallel()
+
+			c := NewclientTestFake()
+			c.ws.Close()
+
+			// wait for pong time out
+			time.Sleep(server.PongWaitTime)
+
+			// check if client still exists is Manager map
+			checkClientConnectionClose(t, manager, c)
+		})
 	})
-
 	// tests to write
-	// server is not listening on closed client connections
 	// clients which pong's server, maintains connection
-
+	// chech if server removes client if, client closes websocket connection
+	// server is not listening on closed client connections
 }
 
-func startServer() func() error {
+func checkClientConnectionClose(t testing.TB, manager *server.Manager, c *clientTestFake) {
+	u, _ := url.Parse(c.url)
+	_, ok := (*manager)[u.Host]
+	if ok == true {
+		t.Fatal("client is present in manager")
+	}
+
+	// check if websocket connection is closed
+	var err error
+	var closed = make(chan bool)
+	go func() {
+		_, _, err = c.ws.ReadMessage()
+		if err != nil {
+			closed <- true
+		}
+	}()
+
+	select {
+	case <-closed:
+		return
+	case <-time.After(4 * time.Second):
+		t.Fatal("websocket connection is not closed")
+	}
+}
+
+func startServer(t testing.TB) func() error {
+	t.Helper()
 	clientManager := server.Manager{}
 	mux := server.NewWebHookHandler(clientManager)
 	srv := &http.Server{
