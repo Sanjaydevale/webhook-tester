@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	clientsManager := &server.Manager{}
+	clientsManager := server.NewManager()
 	mux := server.NewWebHookHandler(clientsManager)
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }
