@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 	"whtester/serialize"
 
@@ -30,18 +31,29 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h(w, r)
 }
 
-type Manager map[string]http.Handler
+type Manager struct {
+	ClientList map[string]http.Handler
+	sync.RWMutex
+}
 
-func (s Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if handler := s[r.Host]; handler != nil {
+func NewManager() *Manager {
+	m := Manager{}
+	m.ClientList = make(map[string]http.Handler)
+	return &m
+}
+
+func (s *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if handler := s.ClientList[r.Host]; handler != nil {
 		handler.ServeHTTP(w, r)
 	}
 }
 
-func (s *Manager) AddNewClient(u string, ws *websocket.Conn) {
+func (m *Manager) AddNewClient(u string, ws *websocket.Conn) {
+	m.Lock()
+	defer m.Unlock()
 	uStruct, _ := url.Parse(u)
 	// handle client conn
-	(*s)[uStruct.Host] = handler(func(w http.ResponseWriter, r *http.Request) {
+	m.ClientList[uStruct.Host] = handler(func(w http.ResponseWriter, r *http.Request) {
 		//handle client
 		if r.Method == http.MethodPost {
 			msg := serialize.EncodeRequest(r)
@@ -51,19 +63,24 @@ func (s *Manager) AddNewClient(u string, ws *websocket.Conn) {
 			w.WriteHeader(http.StatusForbidden)
 		}
 	})
-	go s.HandleClient(u, ws)
+	go m.HandleClient(u, ws)
 }
 
 func (m *Manager) RemoveClient(u string, ws *websocket.Conn) {
+	m.Lock()
+	defer m.Unlock()
 	clientURL, _ := url.Parse(u)
 	clientKey := clientURL.Host
 	fmt.Println("\nremoved client : ", u)
 	ws.Close()
-	delete(*m, clientKey)
+	delete(m.ClientList, clientKey)
 }
 
 func (m *Manager) HandleClient(u string, ws *websocket.Conn) {
 	ws.SetReadDeadline(time.Now().Add(PongWaitTime))
+	ws.SetPongHandler(func(appData string) error {
+		return ws.SetReadDeadline(time.Now().Add(PongWaitTime))
+	})
 	defer m.RemoveClient(u, ws)
 	ticker := time.NewTicker(PingWaitTime)
 	// send pings to client
@@ -120,7 +137,7 @@ func CheckValidURL(u string) bool {
 	return true
 }
 
-func NewWebHookHandler(clientsManager Manager) *http.ServeMux {
+func NewWebHookHandler(clientsManager *Manager) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		ws, err := upgrader.Upgrade(w, r, nil)

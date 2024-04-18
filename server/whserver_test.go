@@ -90,12 +90,15 @@ func TestRandomURL(t *testing.T) {
 	//assumed generated url format
 	//https://Y38IpO3Ow4.example.com
 	t.Run("genereates a URL with 8 character length subdomain", func(t *testing.T) {
-		url := server.GenerateRandomURL("http", "localhost:8080", 8)
-		url = strings.TrimLeft(url, "htps:/")
-		subdomain := strings.Split(url, ".")[0]
+		rawURL := server.GenerateRandomURL("http", "localhost:8080", 8)
+		paresedurl, err := url.Parse(rawURL)
+		if err != nil {
+			t.Errorf("unable to parse rawURL, got %s, error : %v", rawURL, err)
+		}
+		subdomain := strings.Split(paresedurl.Host, ".")[0]
 		want := 8
 		if len(subdomain) != want {
-			t.Errorf("invlaid subdomain length, got %d, want %d", len(subdomain), want)
+			t.Errorf("invlaid subdomain length, got %d(%s), want %d", len(subdomain), subdomain, want)
 		}
 	})
 
@@ -204,8 +207,8 @@ func TestClienConnection(t *testing.T) {
 	server.PingWaitTime = (server.PongWaitTime * 9) / 10
 
 	// start server
-	manager := &server.Manager{}
-	mux := server.NewWebHookHandler(*manager)
+	manager := server.NewManager()
+	mux := server.NewWebHookHandler(manager)
 	srv := http.Server{
 		Addr:    ":8080",
 		Handler: mux,
@@ -261,7 +264,7 @@ func TestClienConnection(t *testing.T) {
 
 			// check if client still exists is Manager map
 			u, _ := url.Parse(c.url)
-			_, ok := (*manager)[u.Host]
+			_, ok := manager.ClientList[u.Host]
 			if ok == true {
 				t.Fatal("client is present in manager")
 			}
@@ -283,16 +286,34 @@ func TestClienConnection(t *testing.T) {
 			// check if client still exists is Manager map
 			checkClientConnectionClose(t, manager, c)
 		})
+
+		t.Run("clients which pong's server, maintains connection", func(t *testing.T) {
+			t.Parallel()
+			// create a new client
+			c := NewclientTestFake()
+			// default ping handler of client sends pong as replay to ping
+			go c.read()
+
+			// wait for pong time out
+			time.Sleep(server.PongWaitTime)
+
+			// check if client connection is open
+			checkClientConnectionOpen(t, manager, c)
+		})
+
+		t.Run("server removes client if client closes websocket connection", func(t *testing.T) {
+			t.Parallel()
+			c := NewclientTestFake()
+			c.ws.Close()
+			time.Sleep(server.PongWaitTime)
+			checkClientConnectionClose(t, manager, c)
+		})
 	})
-	// tests to write
-	// clients which pong's server, maintains connection
-	// chech if server removes client if, client closes websocket connection
-	// server is not listening on closed client connections
 }
 
 func checkClientConnectionClose(t testing.TB, manager *server.Manager, c *clientTestFake) {
 	u, _ := url.Parse(c.url)
-	_, ok := (*manager)[u.Host]
+	_, ok := manager.ClientList[u.Host]
 	if ok == true {
 		t.Fatal("client is present in manager")
 	}
@@ -310,14 +331,39 @@ func checkClientConnectionClose(t testing.TB, manager *server.Manager, c *client
 	select {
 	case <-closed:
 		return
-	case <-time.After(4 * time.Second):
+	case <-time.After(3 * time.Second):
 		t.Fatal("websocket connection is not closed")
+	}
+}
+
+func checkClientConnectionOpen(t testing.TB, manager *server.Manager, c *clientTestFake) {
+	u, _ := url.Parse(c.url)
+	_, ok := manager.ClientList[u.Host]
+	if ok == false {
+		t.Fatal("client is present in manager")
+	}
+
+	// check if websocket connection is closed
+	var err error
+	var closed = make(chan bool)
+	go func() {
+		_, _, err = c.ws.ReadMessage()
+		if err != nil {
+			closed <- true
+		}
+	}()
+
+	select {
+	case <-closed:
+		t.Fatalf("client connection is closed")
+	case <-time.After(3 * time.Second):
+		return
 	}
 }
 
 func startServer(t testing.TB) func() error {
 	t.Helper()
-	clientManager := server.Manager{}
+	clientManager := server.NewManager()
 	mux := server.NewWebHookHandler(clientManager)
 	srv := &http.Server{
 		Addr:    ":8080",
