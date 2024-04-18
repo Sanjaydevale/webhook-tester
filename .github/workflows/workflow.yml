@@ -54,3 +54,22 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: sanjayj369/webhooktester:latest
+
+  deploy_docker:
+    needs:
+      - build
+      - push_to_registry
+    name: "deploying docker"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy using ssh
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.PRIVATE_KEY }}
+          port: 22
+          script: |
+            cd /home/coding/webhook-tester/
+            ./deploy_docker.sh
