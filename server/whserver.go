@@ -31,20 +31,27 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h(w, r)
 }
 
+type client struct {
+	url string
+	ws  *websocket.Conn
+	handler
+}
+
 type Manager struct {
-	ClientList map[string]http.Handler
+	ClientList map[string]client
 	sync.RWMutex
 }
 
 func NewManager() *Manager {
 	m := Manager{}
-	m.ClientList = make(map[string]http.Handler)
+	m.ClientList = make(map[string]client)
 	return &m
 }
 
 func (s *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if handler := s.ClientList[r.Host]; handler != nil {
-		handler.ServeHTTP(w, r)
+	client := s.ClientList[r.Host]
+	if &client != nil {
+		client.ServeHTTP(w, r)
 	}
 }
 
@@ -53,46 +60,51 @@ func (m *Manager) AddNewClient(u string, ws *websocket.Conn) {
 	defer m.Unlock()
 	uStruct, _ := url.Parse(u)
 	// handle client conn
-	m.ClientList[uStruct.Host] = handler(func(w http.ResponseWriter, r *http.Request) {
-		//handle client
-		if r.Method == http.MethodPost {
-			msg := serialize.EncodeRequest(r)
-			ws.WriteMessage(websocket.BinaryMessage, msg)
-			w.WriteHeader(http.StatusAccepted)
-		} else {
-			w.WriteHeader(http.StatusForbidden)
-		}
-	})
-	go m.HandleClient(u, ws)
+	newClient := &client{
+		url: u,
+		ws:  ws,
+		handler: func(w http.ResponseWriter, r *http.Request) {
+			//handle client
+			if r.Method == http.MethodPost {
+				msg := serialize.EncodeRequest(r)
+				ws.WriteMessage(websocket.BinaryMessage, msg)
+				w.WriteHeader(http.StatusAccepted)
+			} else {
+				w.WriteHeader(http.StatusForbidden)
+			}
+		},
+	}
+	m.ClientList[uStruct.Host] = *newClient
+	go m.HandleClient(newClient)
 }
 
-func (m *Manager) RemoveClient(u string, ws *websocket.Conn) {
+func (m *Manager) RemoveClient(c *client) {
 	m.Lock()
 	defer m.Unlock()
-	clientURL, _ := url.Parse(u)
+	clientURL, _ := url.Parse(c.url)
 	clientKey := clientURL.Host
-	fmt.Println("\nremoved client : ", u)
-	ws.Close()
+	fmt.Println("\nremoved client : ", c.url)
+	c.ws.Close()
 	delete(m.ClientList, clientKey)
 }
 
-func (m *Manager) HandleClient(u string, ws *websocket.Conn) {
-	ws.SetReadDeadline(time.Now().Add(PongWaitTime))
-	ws.SetPongHandler(func(appData string) error {
-		return ws.SetReadDeadline(time.Now().Add(PongWaitTime))
+func (m *Manager) HandleClient(c *client) {
+	c.ws.SetReadDeadline(time.Now().Add(PongWaitTime))
+	c.ws.SetPongHandler(func(appData string) error {
+		return c.ws.SetReadDeadline(time.Now().Add(PongWaitTime))
 	})
-	defer m.RemoveClient(u, ws)
+	defer m.RemoveClient(c)
 	ticker := time.NewTicker(PingWaitTime)
 	// send pings to client
 	go func() {
 		for {
 			<-ticker.C
-			ws.WriteMessage(websocket.PingMessage, []byte(""))
+			c.ws.WriteMessage(websocket.PingMessage, []byte(""))
 		}
 	}()
 	// read message from client to trigger pong handler
 	for {
-		_, _, err := ws.ReadMessage()
+		_, _, err := c.ws.ReadMessage()
 		// if err != nil connection is closed
 		// remove the client on returning
 		if err != nil {
