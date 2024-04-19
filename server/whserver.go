@@ -86,7 +86,7 @@ func (m *Manager) RemoveClient(c *client) {
 	m.Lock()
 	defer m.Unlock()
 	clientURL, _ := url.Parse(c.url)
-	clientKey := clientURL.Host
+	clientKey := strings.Split(clientURL.Host, ".")[0]
 	fmt.Println("\nremoved client : ", c.url)
 	c.ws.Close()
 	delete(m.ClientList, clientKey)

@@ -313,7 +313,8 @@ func TestClienConnection(t *testing.T) {
 
 func checkClientConnectionClose(t testing.TB, manager *server.Manager, c *clientTestFake) {
 	u, _ := url.Parse(c.url)
-	_, ok := manager.ClientList[u.Host]
+	subdomain := strings.Split(u.Host, ".")[0]
+	_, ok := manager.ClientList[subdomain]
 	if ok == true {
 		t.Fatal("client is present in manager")
 	}
@@ -338,9 +339,10 @@ func checkClientConnectionClose(t testing.TB, manager *server.Manager, c *client
 
 func checkClientConnectionOpen(t testing.TB, manager *server.Manager, c *clientTestFake) {
 	u, _ := url.Parse(c.url)
-	_, ok := manager.ClientList[u.Host]
+	subdomain := strings.Split(u.Host, ".")[0]
+	_, ok := manager.ClientList[subdomain]
 	if ok == false {
-		t.Fatal("client is present in manager")
+		t.Fatal("client is not present in manager")
 	}
 
 	// check if websocket connection is closed
