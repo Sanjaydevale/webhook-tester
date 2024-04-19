@@ -208,7 +208,7 @@ func TestClienConnection(t *testing.T) {
 
 	// start server
 	manager := server.NewManager()
-	mux := server.NewWebHookHandler(manager)
+	mux := server.NewWebHookHandler(manager, "localhost:8080")
 	srv := http.Server{
 		Addr:    ":8080",
 		Handler: mux,
@@ -364,7 +364,7 @@ func checkClientConnectionOpen(t testing.TB, manager *server.Manager, c *clientT
 func startServer(t testing.TB) func() error {
 	t.Helper()
 	clientManager := server.NewManager()
-	mux := server.NewWebHookHandler(clientManager)
+	mux := server.NewWebHookHandler(clientManager, "localhost:8080")
 	srv := &http.Server{
 		Addr:    ":8080",
 		Handler: mux,

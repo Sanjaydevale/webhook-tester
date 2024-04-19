@@ -49,9 +49,12 @@ func NewManager() *Manager {
 }
 
 func (s *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	client := s.ClientList[r.Host]
-	if &client != nil {
-		client.ServeHTTP(w, r)
+	subdomain := strings.Split(r.Host, ".")[0]
+	client, ok := s.ClientList[subdomain]
+	if ok {
+		client.handler(w, r)
+	} else {
+		w.Write([]byte("client connection closed"))
 	}
 }
 
@@ -74,7 +77,8 @@ func (m *Manager) AddNewClient(u string, ws *websocket.Conn) {
 			}
 		},
 	}
-	m.ClientList[uStruct.Host] = *newClient
+	subdomain := strings.Split(uStruct.Host, ".")[0]
+	m.ClientList[subdomain] = *newClient
 	go m.HandleClient(newClient)
 }
 
@@ -149,14 +153,14 @@ func CheckValidURL(u string) bool {
 	return true
 }
 
-func NewWebHookHandler(clientsManager *Manager) *http.ServeMux {
+func NewWebHookHandler(clientsManager *Manager, domain string) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
 		ws, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			log.Fatalf("error establishing websocket connection")
 		}
-		u := []byte(GenerateRandomURL("http", "localhost:8080", 8))
+		u := []byte(GenerateRandomURL("http", domain, 8))
 		clientsManager.AddNewClient(string(u), ws)
 		fmt.Printf("\nnew client: %s", u)
 		ws.WriteMessage(websocket.TextMessage, u)
