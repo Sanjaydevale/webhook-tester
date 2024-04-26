@@ -10,7 +10,7 @@ on:
     branches: ["main"]
 
 jobs:
-  build:
+  run_tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -27,37 +27,57 @@ jobs:
       - name: Test serialize
         run: go test ./serialize
 
-  push_to_registry:
-    needs: build
-    name: Push Docker image to Docker Hub
+  build_binary_files:
+    needs: run_tests
     runs-on: ubuntu-latest
     steps:
-      - name: Check out the repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.22.2"
+
+      - name: build the binary files
+        run: |
+          env GOOS=windows GOARCH=amd64 go build -o "./binary-files/windows-amd64.exe" ./cmd/client/main.go
+          env GOOS=linux GOARCH=amd64 go build -o "./binary-files/linux-amd64" ./cmd/client/main.go
+          env GOOS=linux GOARCH=arm go build -o "./binary-files/linux-arm" ./cmd/client/main.go
+      - name: Update repository with new binary files
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git config --global github.token ${{secrets.TOKEN}}
+          git add .
+          git commit -m "Update client binary files"
+          git push origin main
+
+  push_to_registry:
+    needs: run_tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
-        with:
-          images: sanjayj369/webhooktester
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@3b5e8027fcad23fda98b2e3ac259d8d67585f671
+      - name: Build and push
+        uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: sanjayj369/webhooktester:latest
 
   deploy_docker:
     needs:
-      - build
+      - run_tests
       - push_to_registry
     name: "deploying docker"
     runs-on: ubuntu-latest
