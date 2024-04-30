@@ -12,11 +12,12 @@ import (
 func main() {
 
 	args := os.Args[1:]
+	serverLink := "ws://new.whlink.sanjayj.dev/ws"
 	var port int
 	if len(args) == 0 {
-		log.Fatalln("expected port number, usage $main <port number> <server ws URL>")
-	} else if len(args) > 2 {
-		log.Fatalln("too many arguments, usage $main <port number> <server ws URL>")
+		log.Fatalln("expected port number, usage $main <port number>")
+	} else if len(args) > 1 {
+		log.Fatalln("too many arguments, usage $main <port number>")
 	} else {
 		var err error
 		port, err = strconv.Atoi(args[0])
@@ -26,7 +27,7 @@ func main() {
 	}
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	c := cli.Newclient(args[1])
+	c := cli.Newclient(serverLink)
 	defer c.Conn.Close()
 	fmt.Printf("link : %s", c.URL)
 
