@@ -1,8 +1,16 @@
 This project is a simple webhook tester implemented using Golang and developed following the principles of Test-Driven Development (TDD). It provides a convenient way to test your webhook program without the need for a public webhook link. The project is completely automated using CI/CD with GitHub Actions, ensuring that the code is properly tested and built with each change.
 
-If you have a webhook program that you want to test but don't have a publicly accessible webhook URL, this webhook tester can come in handy. It allows you to simulate receiving webhook requests and inspect the details of the received requests, such as the HTTP method, headers, and body.
+If you have a webhook program that you want to test but don't have a publicly accessible webhook URL, this webhook tester can come in handy. It allows you to simulate receiving webhook requests
 
 Feel free to explore the project, contribute to its development, and leverage it for your own webhook testing needs. The project is open-source and welcomes contributions from the community to make it even better.
+
+### How it works:
+
+when you run the client executable file it makes a websocket connection with the server, the server generates a random URL and sends it to the client, the client displays it in the console,
+
+![Untitled](https://prod-files-secure.s3.us-west-2.amazonaws.com/5f59dd30-8050-4915-9805-4a7006f791d8/955ac4b8-218f-4cd1-ab5c-fba6c02379bb/Untitled.png)
+
+here the webhook program that i need to test is running on the `localhost:5555`, the link displayed is used as the webhook link to receive webhooks(HTTP POST request), when a post request is sent to the provided link, the server receives it, then the server serialises the request and sends it to the client running on your system, client on receiving the serialized request rebuilds the request and makes the same request to the webhook program running on `localhost:5555`
 
 [**Read My Blog To Know More**](https://blog.sanjayj.dev/blog/webhook-tester/)
 
