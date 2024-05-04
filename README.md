@@ -8,7 +8,7 @@ Feel free to explore the project, contribute to its development, and leverage it
 
 when you run the client executable file it makes a websocket connection with the server, the server generates a random URL and sends it to the client, the client displays it in the console,
 
-![Untitled](https://prod-files-secure.s3.us-west-2.amazonaws.com/5f59dd30-8050-4915-9805-4a7006f791d8/955ac4b8-218f-4cd1-ab5c-fba6c02379bb/Untitled.png)
+![client](https://github.com/sanjayJ369/webhook-tester/assets/111266023/53dc2b0f-3744-42df-8042-e77fab97a3d7)
 
 here the webhook program that i need to test is running on the `localhost:5555`, the link displayed is used as the webhook link to receive webhooks(HTTP POST request), when a post request is sent to the provided link, the server receives it, then the server serialises the request and sends it to the client running on your system, client on receiving the serialized request rebuilds the request and makes the same request to the webhook program running on `localhost:5555`
 
