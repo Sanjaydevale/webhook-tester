@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"strings"
 	"time"
 	"whtester/serialize"
 
@@ -39,7 +40,7 @@ func (c *client) Read(w io.Writer, fields []string, port int) {
 		req := serialize.DecodeRequest(data)
 
 		// print the specified fields
-		fmt.Fprint(w, readRequestFields(fields, *req))
+		fmt.Fprint(w, ReadRequestFields(fields, *req))
 
 		// forward request to locally running program
 		forwardRequest(c, req, port)
@@ -65,17 +66,18 @@ func Newclient(serverURL string) *client {
 }
 
 // reads only specifies HTTP request fields and returns them in string format
-func readRequestFields(fields []string, req http.Request) string {
-	out := ""
+func ReadRequestFields(fields []string, req http.Request) string {
+	var out strings.Builder
 	r := reflect.ValueOf(req)
 	for _, f := range fields {
 		if r.FieldByName(f) == reflect.ValueOf(nil) {
 			fmt.Printf("does not have field, %s", f)
 		}
 		field := fmt.Sprintf("\n%s :%v", f, r.FieldByName(f).Interface())
-		out += field
+		out.WriteString(field)
+		out.WriteString("\n")
 	}
-	return out
+	return out.String()
 }
 
 func readURL(ws *websocket.Conn) string {

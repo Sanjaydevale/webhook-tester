@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"whtester/cli"
@@ -165,4 +166,15 @@ func TestWhCLI(t *testing.T) {
 			t.Errorf("local server didn't receive any request")
 		}
 	})
+}
+
+func BenchmarkReadRequest(b *testing.B) {
+	// create a new http request
+	body := bytes.NewBuffer([]byte("arbitary body for http request"))
+	req := httptest.NewRequest(http.MethodPost, "http://benchmark:8080", body)
+	fields := []string{"Header", "Method", "Body"}
+
+	for i := 0; i < b.N; i++ {
+		cli.ReadRequestFields(fields, *req)
+	}
 }
