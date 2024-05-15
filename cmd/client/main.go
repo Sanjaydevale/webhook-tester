@@ -1,30 +1,31 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"sync"
 	"whtester/cli"
 )
 
 func main() {
 
-	args := os.Args[1:]
+	port := flag.Int("p", 8888, "./main -p <portnumber>")
 	serverLink := "ws://new.whlink.sanjayj.dev/ws"
-	var port int
-	if len(args) == 0 {
-		log.Fatalln("expected port number, usage $main <port number>")
-	} else if len(args) > 1 {
-		log.Fatalln("too many arguments, usage $main <port number>")
-	} else {
-		var err error
-		port, err = strconv.Atoi(args[0])
-		if err != nil {
-			log.Fatalf("%v", err)
+
+	// check if the flag is set
+	argSet := false
+	flag.Parse()
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "p" {
+			argSet = true
 		}
+	})
+	if !argSet {
+		log.Fatalln("expected port number, usage ./main -p <port number>")
 	}
+
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	c := cli.Newclient(serverLink)
@@ -33,6 +34,6 @@ func main() {
 
 	// should read fields from a json file
 	fields := []string{"Header", "Method", "Body"}
-	go c.Stream(os.Stdout, fields, port)
+	go c.Stream(os.Stdout, fields, *port)
 	wg.Wait()
 }
