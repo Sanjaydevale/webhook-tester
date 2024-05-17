@@ -20,6 +20,12 @@ type client struct {
 	httpClient *http.Client
 }
 
+var AvailabeFields = map[string]struct{}{
+	"Method": {}, "URL": {}, "Proto": {}, "ProtoMajor": {}, "ProtoMinor": {},
+	"Header": {}, "Body": {}, "ContentLength": {}, "TransferEncoding": {}, "Close": {},
+	"Host": {}, "RemoteAddr": {}, "RequestURI": {},
+}
+
 func (c *client) Stream(w io.Writer, fields []string, port int) {
 	for {
 		c.Read(w, fields, port)
@@ -71,7 +77,12 @@ func ReadRequestFields(fields []string, req http.Request) string {
 	r := reflect.ValueOf(req)
 	for _, f := range fields {
 		if r.FieldByName(f) == reflect.ValueOf(nil) {
-			fmt.Printf("does not have field, %s", f)
+			fmt.Printf("\ndoes not have field, %s\n", f)
+			fmt.Println("available fields:")
+			for i := 0; i < r.NumField(); i++ {
+				fmt.Println(r.Type().Field(i).Name)
+			}
+			continue
 		}
 		field := fmt.Sprintf("\n%s :%v", f, r.FieldByName(f).Interface())
 		out.WriteString(field)
