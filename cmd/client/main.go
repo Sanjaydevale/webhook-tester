@@ -15,26 +15,10 @@ var (
 )
 
 func main() {
-
-	port := flag.Int("p", 8888, "./main -p <portnumber>")
-	fieldCmd := flag.NewFlagSet("field", flag.ExitOnError)
-
-	// check if the flag is set
-	argSet := false
-	flag.Parse()
-	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "p" {
-			argSet = true
-		}
-	})
-	if !argSet {
-		log.Fatalln("expected port number, usage ./main -p <port number>")
+	config, err := handleCmdArgs(os.Args[1:])
+	if err != nil {
+		log.Fatalf("handling cmd args : %s", err)
 	}
-
-	// parse the field values
-	fieldCmd.Parse(os.Args[3:])
-	fields := fieldCmd.Args()
-	fields = handleFieldArgs(fields)
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -43,7 +27,7 @@ func main() {
 	fmt.Printf("link : %s", c.URL)
 
 	// should read fields from a json file
-	go c.Stream(os.Stdout, fields, *port)
+	go c.Stream(os.Stdout, config.fields, config.port)
 	wg.Wait()
 }
 
@@ -65,4 +49,21 @@ func handleFieldArgs(fields []string) []string {
 	}
 
 	return fields
+}
+
+type Config struct {
+	port   int
+	fields []string
+}
+
+func handleCmdArgs(cmdArgs []string) (*Config, error) {
+	var conf Config
+	args := flag.NewFlagSet("args", flag.ContinueOnError)
+	args.IntVar(&conf.port, "p", 8888, "./main -p <portnumber>")
+	err := args.Parse(cmdArgs)
+	if err != nil {
+		return nil, fmt.Errorf("parsing args : %w", err)
+	}
+	conf.fields = handleFieldArgs(args.Args())
+	return &conf, nil
 }
