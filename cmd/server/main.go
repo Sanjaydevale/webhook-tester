@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,24 +12,27 @@ import (
 	"whtester/server"
 )
 
-func main() {
+type serverConfig struct {
+	port   int
+	domain string
+}
 
+func main() {
+	conf, err := handleCmdArgs(os.Args[1:])
+	if err != nil {
+		log.Fatalf("invalid parameter count")
+	}
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	done := make(chan bool)
 
-	if len(os.Args) > 3 {
-		fmt.Println(os.Args)
-		fmt.Println("usage main.go <domain> <port>")
-		log.Fatalf("invalid parameter count")
-	}
-	domain := os.Args[1]
-	port := os.Args[2]
+	domain := conf.domain
+	port := conf.port
 
 	clientsManager := server.NewManager()
 	mux := server.NewWebHookHandler(clientsManager, domain)
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%s", port),
+		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,
 	}
 
@@ -48,4 +52,18 @@ func main() {
 	}()
 
 	<-done
+}
+
+func handleCmdArgs(cmdArgs []string) (*serverConfig, error) {
+	var conf serverConfig
+	if len(cmdArgs) < 4 {
+		fmt.Println("invalid arguments count")
+		fmt.Println("usage main.go -d <domain> -p <port>")
+		return nil, fmt.Errorf("invalid arguments count")
+	}
+	args := flag.NewFlagSet("args", flag.ContinueOnError)
+	args.IntVar(&conf.port, "p", 8080, "port on which the server should run")
+	args.StringVar(&conf.domain, "d", "localhost:8080", "domain which the server should use to generate client Urls")
+	args.Parse(cmdArgs)
+	return &conf, nil
 }
