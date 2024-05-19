@@ -8,7 +8,7 @@ import (
 
 func TestHandleCmdArgs(t *testing.T) {
 	t.Run("port number is configurable", func(t *testing.T) {
-		got, _ := handleCmdArgs([]string{"-p", "8080"})
+		got, _ := handleCmdArgs([]string{"-p", "foo"})
 		want := 8080
 		if got.port != want {
 			t.Errorf("invalid port config, got %d want %d", got.port, want)
@@ -20,4 +20,24 @@ func TestHandleCmdArgs(t *testing.T) {
 		want := []string{"Method", "Body"}
 		assert.ElementsMatch(t, got.fields, want)
 	})
+}
+
+func ExampleFields() {
+	handleFieldArgs([]string{"test"})
+	// output:
+	// does not contain filed  test
+	// available fields :
+	// Body
+	// Close
+	// ContentLength
+	// Header
+	// Host
+	// Method
+	// Proto
+	// ProtoMajor
+	// ProtoMinor
+	// RemoteAddr
+	// RequestURI
+	// TransferEncoding
+	// URL
 }
