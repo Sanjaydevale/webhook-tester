@@ -12,7 +12,8 @@ import (
 
 var (
 	defaultFields = []string{"Method", "Header", "Body"}
-	serverLink    = "ws://new.whlink.sanjayj.dev/ws"
+	serverLink    = "wss://new.whlink.sanjayj.dev/ws"
+	// serverLink = "wss://webhook-tester-3dpc.onrender.com/ws"
 )
 
 func main() {

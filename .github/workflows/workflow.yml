@@ -74,22 +74,3 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: sanjayj369/webhooktester:latest
-
-  deploy_docker:
-    needs:
-      - run_tests
-      - push_to_registry
-    name: "deploying docker"
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: executing remote ssh commands using ssh key
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.HOST }}
-          username: ${{ secrets.USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
-          script: |
-            cd /home/coding/webhook-tester/
-            ./deploy_docker.sh
