@@ -14,8 +14,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type client struct {
+type Client struct {
 	URL        string
+	Key        string
 	Conn       *websocket.Conn
 	httpClient *http.Client
 }
@@ -26,13 +27,13 @@ var AvailabeFields = map[string]struct{}{
 	"Host": {}, "RemoteAddr": {}, "RequestURI": {},
 }
 
-func (c *client) Stream(w io.Writer, fields []string, ports []int) {
+func (c *Client) Stream(w io.Writer, fields []string, ports []int) {
 	for {
 		c.Read(w, fields, ports)
 	}
 }
 
-func (c *client) Read(w io.Writer, fields []string, ports []int) {
+func (c *Client) Read(w io.Writer, fields []string, ports []int) {
 	msgType, data, err := c.Conn.ReadMessage()
 	if err != nil {
 		log.Fatalf("\nerror reading message from server, %v\n", err)
@@ -53,14 +54,14 @@ func (c *client) Read(w io.Writer, fields []string, ports []int) {
 	}
 }
 
-func forwardRequestToPorts(c *client, reqblob []byte, ports []int) {
+func forwardRequestToPorts(c *Client, reqblob []byte, ports []int) {
 	for _, port := range ports {
 		req := serialize.DecodeRequest(reqblob)
 		forwardRequest(c, req, port)
 	}
 }
 
-func forwardRequest(c *client, req *http.Request, port int) {
+func forwardRequest(c *Client, req *http.Request, port int) {
 	req.URL, _ = url.Parse(fmt.Sprintf("http://localhost:%d", port))
 	req.RequestURI = ""
 	_, err := c.httpClient.Do(req)
@@ -69,12 +70,22 @@ func forwardRequest(c *client, req *http.Request, port int) {
 	}
 }
 
-func Newclient(serverURL string) *client {
-	c := &client{}
+func Newclient(serverURL string) *Client {
+	c := &Client{}
 	httpClient := &http.Client{}
 	c.httpClient = httpClient
 	c.Conn = NewConn(serverURL)
-	c.URL = readURL(c.Conn)
+	readURLAndKey(c)
+	return c
+}
+
+func ConnToGroup(serverURL string, groupURL string, key string) *Client {
+	c := &Client{}
+	httpClient := &http.Client{}
+	c.httpClient = httpClient
+	c.URL = groupURL
+	c.Key = key
+	c.Conn = NewConnGroup(serverURL, groupURL, key)
 	return c
 }
 
@@ -98,32 +109,51 @@ func ReadRequestFields(fields []string, req http.Request) string {
 	return out.String()
 }
 
-func readURL(ws *websocket.Conn) string {
-	result := make(chan string, 1)
+func readURLAndKey(c *Client) {
+	done := make(chan bool)
 	// listen to the server
 	go func() {
-		msgType, data, err := ws.ReadMessage()
+		msgType, data, err := c.Conn.ReadMessage()
 		if err != nil {
 			log.Fatalf("error reading URL from server, %v", err)
 		}
 		if msgType != websocket.TextMessage {
 			log.Fatalf("expected to received URL from server, go message of type %d", msgType)
 		}
-		result <- string(data)
-		close(result)
+		url := strings.Split(string(data), "\n")[0]
+		key := strings.Split(string(data), "password: ")[1]
+		c.URL = url
+		c.Key = key
+		done <- true
 	}()
 
 	select {
-	case url := <-result:
-		return url
+	case <-done:
+		return
 	case <-time.After(5 * time.Second):
 		log.Fatalf("took too long to read message from server")
 	}
-	return ""
+
+}
+
+func NewConnGroup(wsLink string, url string, key string) *websocket.Conn {
+	header := make(http.Header)
+	header.Set("url", url)
+	header.Set("key", key)
+	dailer := websocket.DefaultDialer
+	dailer.HandshakeTimeout = time.Minute
+	ws, _, err := dailer.Dial(wsLink, header)
+	if err != nil {
+		log.Fatalf("error establishing websocket connection: %v", err.Error())
+	}
+	return ws
 }
 
 func NewConn(wsLink string) *websocket.Conn {
-	ws, _, err := websocket.DefaultDialer.Dial(wsLink, nil)
+	websocket.DefaultDialer.HandshakeTimeout = time.Minute
+	dailer := websocket.DefaultDialer
+	dailer.HandshakeTimeout = time.Minute
+	ws, _, err := dailer.Dial(wsLink, nil)
 	if err != nil {
 		log.Fatalf("error establishing websocket connection: %v", err.Error())
 	}

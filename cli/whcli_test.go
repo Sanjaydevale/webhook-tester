@@ -91,7 +91,7 @@ func NewserverTestFake() *serverTestFake {
 		upgrader := websocket.Upgrader{}
 		ws, _ := upgrader.Upgrade(w, r, nil)
 		s.ws = ws
-		ws.WriteMessage(websocket.TextMessage, []byte("tempURL"))
+		ws.WriteMessage(websocket.TextMessage, []byte("tempURL password: tempPassword"))
 	})
 	srv := &http.Server{
 		Handler: mux,

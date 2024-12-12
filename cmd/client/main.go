@@ -30,8 +30,9 @@ func (p *ports) Set(value string) error {
 
 var (
 	defaultFields = []string{"Method", "Header", "Body"}
-	// serverLink    = "wss://new.whlink.sanjayj.dev/ws"
-	serverLink = "ws://localhost:8080/ws"
+	serverLink    = "wss://new.whlink.sanjayj.dev/ws"
+	// serverLink    = "ws://localhost:8080/ws"
+	joinGroupLink = "wss://new.whlink.sanjayj.dev/wsold"
 )
 
 func main() {
@@ -39,19 +40,30 @@ func main() {
 	if err != nil {
 		log.Fatalf("handling cmd args : %s", err)
 	}
-
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	c := cli.Newclient(serverLink)
-	defer c.Conn.Close()
-	fmt.Printf("link : %s", c.URL)
-
-	// should read fields from a json file
 	var ports []int
 	for _, port := range config.ports {
 		ports = append(ports, int(port))
 	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	var c *cli.Client
+	if config.connect {
+		var url string
+		var key string
+		fmt.Print("\nenter webhook link:")
+		fmt.Scan(&url)
+		fmt.Println("enter webhook password:")
+		fmt.Scan(&key)
+		c = cli.ConnToGroup(joinGroupLink, url, key)
+	} else {
+		c = cli.Newclient(serverLink)
+	}
+	fmt.Printf("\nlink: %s", c.URL)
+	fmt.Printf("\npassword: %s", c.Key)
+	defer c.Conn.Close()
 	go c.Stream(os.Stdout, config.fields, ports)
+
 	wg.Wait()
 }
 
@@ -85,16 +97,16 @@ func handleFieldArgs(fields []string) ([]string, error) {
 }
 
 type Config struct {
-	ports  ports
-	fields []string
+	ports   ports
+	fields  []string
+	connect bool
 }
 
 func handleCmdArgs(cmdArgs []string) (*Config, error) {
 	var conf Config
-
 	args := flag.NewFlagSet("args", flag.ExitOnError)
 	args.Var(&conf.ports, "p", "the port on which your webhook program is running")
-
+	args.BoolVar(&conf.connect, "c", false, "connect to client group")
 	err := args.Parse(cmdArgs)
 	if err != nil {
 		return nil, fmt.Errorf("parsing args : %w", err)

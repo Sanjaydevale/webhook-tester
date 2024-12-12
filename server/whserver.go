@@ -228,8 +228,6 @@ func NewWebHookHandler(clientsManager *Manager, domain string) *http.ServeMux {
 
 		if key == Key {
 			clientsManager.AddNewClient(Url, ws)
-			u := fmt.Sprintf("\n%s\npassword:%s", Url, Key)
-			ws.WriteMessage(websocket.TextMessage, []byte(u))
 		}
 	})
 	mux.Handle("/", clientsManager)
