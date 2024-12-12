@@ -26,13 +26,13 @@ var AvailabeFields = map[string]struct{}{
 	"Host": {}, "RemoteAddr": {}, "RequestURI": {},
 }
 
-func (c *client) Stream(w io.Writer, fields []string, port int) {
+func (c *client) Stream(w io.Writer, fields []string, ports []int) {
 	for {
-		c.Read(w, fields, port)
+		c.Read(w, fields, ports)
 	}
 }
 
-func (c *client) Read(w io.Writer, fields []string, port int) {
+func (c *client) Read(w io.Writer, fields []string, ports []int) {
 	msgType, data, err := c.Conn.ReadMessage()
 	if err != nil {
 		log.Fatalf("\nerror reading message from server, %v\n", err)
@@ -49,7 +49,7 @@ func (c *client) Read(w io.Writer, fields []string, port int) {
 		fmt.Fprint(w, ReadRequestFields(fields, *req))
 
 		// forward request to locally running program
-		forwardRequest(c, req, port)
+		forwardRequestToPorts(c, req, ports)
 	}
 }
 

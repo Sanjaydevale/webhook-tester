@@ -6,9 +6,27 @@ import (
 	"log"
 	"os"
 	"sort"
+	"strconv"
 	"sync"
 	"whtester/cli"
 )
+
+// ports to handle slice of ports as input
+type ports []int
+
+func (p *ports) String() string {
+	return fmt.Sprintf("%v", *p)
+}
+
+func (p *ports) Set(value string) error {
+	port, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("converting port string into number: %w", err)
+	}
+
+	*p = append(*p, port)
+	return nil
+}
 
 var (
 	defaultFields = []string{"Method", "Header", "Body"}
@@ -29,7 +47,11 @@ func main() {
 	fmt.Printf("link : %s", c.URL)
 
 	// should read fields from a json file
-	go c.Stream(os.Stdout, config.fields, config.port)
+	var ports []int
+	for _, port := range config.ports {
+		ports = append(ports, int(port))
+	}
+	go c.Stream(os.Stdout, config.fields, ports)
 	wg.Wait()
 }
 
@@ -63,14 +85,16 @@ func handleFieldArgs(fields []string) ([]string, error) {
 }
 
 type Config struct {
-	port   int
+	ports  ports
 	fields []string
 }
 
 func handleCmdArgs(cmdArgs []string) (*Config, error) {
 	var conf Config
+
 	args := flag.NewFlagSet("args", flag.ExitOnError)
-	args.IntVar(&conf.port, "p", 8888, "the port on which your webhook program is running")
+	args.Var(&conf.ports, "p", "the port on which your webhook program is running")
+
 	err := args.Parse(cmdArgs)
 	if err != nil {
 		return nil, fmt.Errorf("parsing args : %w", err)
@@ -79,5 +103,9 @@ func handleCmdArgs(cmdArgs []string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("handling fields : %w", err)
 	}
+	if len(conf.ports) == 0 {
+		return nil, fmt.Errorf("expected port number")
+	}
+
 	return &conf, nil
 }

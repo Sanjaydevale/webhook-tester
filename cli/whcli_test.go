@@ -107,6 +107,11 @@ func TestWhCLI(t *testing.T) {
 	// start server
 	s := NewserverTestFake()
 	go s.Start()
+	defer s.Close()
+
+	// wait for the server to start
+	time.Sleep(time.Millisecond)
+
 	t.Run("cli establishes websocket connection with the server", func(t *testing.T) {
 
 		// try to connect to the server
@@ -126,7 +131,7 @@ func TestWhCLI(t *testing.T) {
 		defer c.Conn.Close()
 		want := "this is a temp message"
 		s.WriteMessage(want)
-		c.Read(buf, nil, 5555)
+		c.Read(buf, nil, []int{5555})
 		if buf.String() == "" {
 			t.Error("expected a message to be writtem")
 		}
@@ -141,7 +146,7 @@ func TestWhCLI(t *testing.T) {
 
 		msg := "message sent"
 		s.WriteMessage(msg)
-		c.Read(buf, nil, 5555)
+		c.Read(buf, nil, []int{5555})
 		want := "\n" + msg
 		if buf.String() != want {
 			t.Errorf("got %q, want %q", buf.String(), want)
@@ -163,7 +168,7 @@ func TestWhCLI(t *testing.T) {
 		s.WriteEncodedRequest("this is a test")
 		fields := []string{"Body", "Method", "URL", "Header"}
 
-		c.Read(buf, fields, 5555)
+		c.Read(buf, fields, []int{5555})
 		got := buf.String()
 		for _, field := range fields {
 			if !strings.Contains(got, field) {
@@ -186,7 +191,7 @@ func TestWhCLI(t *testing.T) {
 		s.WriteEncodedRequest("this is a test")
 
 		buf := new(bytes.Buffer)
-		c.Read(buf, []string{"Body"}, 5555)
+		c.Read(buf, []string{"Body"}, []int{5555})
 
 		// check if the local server received the message
 		if lsrv.received == false {
@@ -209,20 +214,24 @@ func TestForwardMultiplePorts(t *testing.T) {
 
 	// wait for some time to get the server started
 	time.Sleep(time.Millisecond)
+
 	// create a new client
 	c := Newclient(fakeServerWSURL)
 	defer c.Conn.Close()
 
 	// spin up new locally running server
-	lsrv1 := NewLocalServerTestFake(":5555")
+	lsrv1 := NewLocalServerTestFake(":5556")
 	go lsrv1.Start()
 	defer lsrv1.Close()
 
-	lsrv2 := NewLocalServerTestFake(":5556")
+	lsrv2 := NewLocalServerTestFake(":5557")
 	go lsrv2.Start()
 	defer lsrv2.Close()
 
-	ports := []int{5555, 5556}
+	// wait for some time to get the server started
+	time.Sleep(time.Millisecond)
+
+	ports := []int{5556, 5557}
 	forwardRequestToPorts(c, req, ports)
 	if !lsrv1.received {
 		t.Errorf("local server 1 didn't receive message")
