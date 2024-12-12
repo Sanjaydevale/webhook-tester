@@ -56,7 +56,6 @@ func (c *client) Read(w io.Writer, fields []string, ports []int) {
 func forwardRequestToPorts(c *client, reqblob []byte, ports []int) {
 	for _, port := range ports {
 		req := serialize.DecodeRequest(reqblob)
-		fmt.Println(port)
 		forwardRequest(c, req, port)
 	}
 }

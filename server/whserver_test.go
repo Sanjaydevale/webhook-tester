@@ -200,6 +200,10 @@ func TestForwardingMessage(t *testing.T) {
 	})
 }
 
+func TestForwardingMessageToMultipleClients(t *testing.T) {
+
+}
+
 func TestClienConnection(t *testing.T) {
 
 	// set PingWait and PongWait for server

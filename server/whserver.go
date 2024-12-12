@@ -12,6 +12,7 @@ import (
 	"time"
 	"whtester/serialize"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -34,27 +35,34 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 type client struct {
 	url string
 	ws  *websocket.Conn
+	uid string
 	handler
 }
 
+type clientGroup struct {
+	clients map[string]client
+}
+
 type Manager struct {
-	ClientList map[string]client
+	ClientList map[string]clientGroup
 	sync.RWMutex
 }
 
 func NewManager() *Manager {
 	m := Manager{}
-	m.ClientList = make(map[string]client)
+	m.ClientList = make(map[string]clientGroup)
 	return &m
 }
 
 func (s *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	subdomain := strings.Split(r.Host, ".")[0]
-	client, ok := s.ClientList[subdomain]
-	if ok {
-		client.handler(w, r)
-	} else {
-		w.Write([]byte("client connection closed"))
+	clientGroup, ok := s.ClientList[subdomain]
+	for _, client := range clientGroup.clients {
+		if ok {
+			client.handler(w, r)
+		} else {
+			w.Write([]byte("client connection closed"))
+		}
 	}
 }
 
@@ -62,6 +70,7 @@ func (m *Manager) AddNewClient(u string, ws *websocket.Conn) {
 	m.Lock()
 	defer m.Unlock()
 	uStruct, _ := url.Parse(u)
+	uid := uuid.New().String()
 	// handle client conn
 	newClient := &client{
 		url: u,
@@ -76,9 +85,19 @@ func (m *Manager) AddNewClient(u string, ws *websocket.Conn) {
 				w.WriteHeader(http.StatusForbidden)
 			}
 		},
+		uid: uid,
 	}
 	subdomain := strings.Split(uStruct.Host, ".")[0]
-	m.ClientList[subdomain] = *newClient
+	group, ok := m.ClientList[subdomain]
+	if !ok {
+		newGroup := &clientGroup{
+			clients: make(map[string]client),
+		}
+		m.ClientList[subdomain] = *newGroup
+		newGroup.clients[uid] = *newClient
+	} else {
+		group.clients[uid] = *newClient
+	}
 	go m.HandleClient(newClient)
 }
 
@@ -87,9 +106,17 @@ func (m *Manager) RemoveClient(c *client) {
 	defer m.Unlock()
 	clientURL, _ := url.Parse(c.url)
 	clientKey := strings.Split(clientURL.Host, ".")[0]
-	fmt.Println("\nremoved client : ", c.url)
 	c.ws.Close()
-	delete(m.ClientList, clientKey)
+	// delete client from the group
+	group, ok := m.ClientList[clientKey]
+	delete(group.clients, c.uid)
+	fmt.Printf("\nremoved client : %s", c.uid)
+
+	// no client in the group delete the group
+	if ok && len(group.clients) == 0 {
+		delete(m.ClientList, clientKey)
+		fmt.Printf("\nremove client group: %s", clientKey)
+	}
 }
 
 func (m *Manager) HandleClient(c *client) {
