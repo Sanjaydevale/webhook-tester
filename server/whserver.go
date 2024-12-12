@@ -45,12 +45,14 @@ type clientGroup struct {
 
 type Manager struct {
 	ClientList map[string]clientGroup
+	Passwords  map[string]string
 	sync.RWMutex
 }
 
 func NewManager() *Manager {
 	m := Manager{}
 	m.ClientList = make(map[string]clientGroup)
+	m.Passwords = make(map[string]string)
 	return &m
 }
 
@@ -98,6 +100,7 @@ func (m *Manager) AddNewClient(u string, ws *websocket.Conn) {
 	} else {
 		group.clients[uid] = *newClient
 	}
+	fmt.Printf("\nnew client: %s", uid)
 	go m.HandleClient(newClient)
 }
 
@@ -115,6 +118,8 @@ func (m *Manager) RemoveClient(c *client) {
 	// no client in the group delete the group
 	if ok && len(group.clients) == 0 {
 		delete(m.ClientList, clientKey)
+		// delete the client also from passwords
+		delete(m.Passwords, clientKey)
 		fmt.Printf("\nremove client group: %s", clientKey)
 	}
 }
@@ -188,9 +193,44 @@ func NewWebHookHandler(clientsManager *Manager, domain string) *http.ServeMux {
 			log.Fatalf("error establishing websocket connection")
 		}
 		u := []byte(GenerateRandomURL("http", domain, 8))
+		// generate random password
+		password := GenerateRandomString(6)
+		clientsManager.Passwords[string(u)] = password
 		clientsManager.AddNewClient(string(u), ws)
-		fmt.Printf("\nnew client: %s", u)
+		// send password and unique url to the client
+		u = append(u, []byte(fmt.Sprintf("\npassword: %s", password))...)
 		ws.WriteMessage(websocket.TextMessage, u)
+	})
+
+	mux.HandleFunc("/wsold", func(w http.ResponseWriter, r *http.Request) {
+		// upgrade connection to websockets
+		ws, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			log.Fatalf("error establishing websocket connection")
+		}
+
+		Url := r.Header.Get("url")
+		Key := r.Header.Get("key")
+
+		if err != nil {
+			ws.WriteMessage(websocket.TextMessage, []byte("invalid json data"))
+			ws.Close()
+			return
+		}
+
+		// check if the group exists
+		key, ok := clientsManager.Passwords[Url]
+		if !ok {
+			ws.WriteMessage(websocket.TextMessage, []byte("invalid group, grop does not exisit"))
+			ws.Close()
+			return
+		}
+
+		if key == Key {
+			clientsManager.AddNewClient(Url, ws)
+			u := fmt.Sprintf("\n%s\npassword:%s", Url, Key)
+			ws.WriteMessage(websocket.TextMessage, []byte(u))
+		}
 	})
 	mux.Handle("/", clientsManager)
 	return mux

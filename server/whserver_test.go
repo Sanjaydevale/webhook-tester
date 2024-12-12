@@ -1,4 +1,4 @@
-package server_test
+package server
 
 import (
 	"bytes"
@@ -9,14 +9,15 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"whtester/server"
 
 	"github.com/gorilla/websocket"
+	"github.com/stretchr/testify/assert"
 )
 
 type clientTestFake struct {
 	output map[int][][]byte
 	url    string
+	key    string
 	domain string
 	ws     *websocket.Conn
 	client http.Client
@@ -38,6 +39,27 @@ func (c *clientTestFake) read() {
 	}
 }
 
+func AddClientToGroup(t testing.TB, groupUrl string, key string) *clientTestFake {
+	t.Helper()
+
+	header := make(http.Header)
+	header.Set("url", groupUrl)
+	header.Set("key", key)
+
+	c := &clientTestFake{}
+	c.client = http.Client{}
+	c.domain = "ws://localhost:8080/wsold"
+	c.key = key
+	c.url = groupUrl
+	c.output = make(map[int][][]byte)
+	ws, _, err := websocket.DefaultDialer.Dial(c.domain, header)
+	c.ws = ws
+	if err != nil {
+		log.Fatalf("error in clientTestFake establishing connection with whserver, %v", err.Error())
+	}
+	return c
+}
+
 func NewclientTestFake() *clientTestFake {
 	c := &clientTestFake{}
 	c.client = http.Client{}
@@ -56,12 +78,15 @@ func NewclientTestFake() *clientTestFake {
 		if err != nil {
 			continue
 		}
-		if string(p) != "" {
-			c.url = string(p)
+		// message from server contains both url and password
+		url := strings.Split(string(p), "\n")[0]
+		key := strings.Split(string(p), "password: ")[1]
+		if url != "" && key != "" {
+			c.url = url
+			c.key = key
 			break
 		}
 	}
-	c.ws = ws
 	return c
 }
 
@@ -90,7 +115,7 @@ func TestRandomURL(t *testing.T) {
 	//assumed generated url format
 	//https://Y38IpO3Ow4.example.com
 	t.Run("genereates a URL with 8 character length subdomain", func(t *testing.T) {
-		rawURL := server.GenerateRandomURL("http", "localhost:8080", 8)
+		rawURL := GenerateRandomURL("http", "localhost:8080", 8)
 		paresedurl, err := url.Parse(rawURL)
 		if err != nil {
 			t.Errorf("unable to parse rawURL, got %s, error : %v", rawURL, err)
@@ -103,15 +128,15 @@ func TestRandomURL(t *testing.T) {
 	})
 
 	t.Run("generate a valid URL", func(t *testing.T) {
-		url := server.GenerateRandomURL("http", "localhost:8080", 8)
-		if !server.CheckValidURL(url) {
+		url := GenerateRandomURL("http", "localhost:8080", 8)
+		if !CheckValidURL(url) {
 			t.Errorf("generates an invalid url got %s", url)
 		}
 	})
 	t.Run("generates a random URL everytime", func(t *testing.T) {
 		var urlList []string
 		for i := 0; i < 10; i++ {
-			url := server.GenerateRandomURL("http", "localhost:8080", 8)
+			url := GenerateRandomURL("http", "localhost:8080", 8)
 			for _, u := range urlList {
 				if u == url {
 					t.Fatalf("found duplicate urls, %s", u)
@@ -124,7 +149,7 @@ func TestRandomURL(t *testing.T) {
 
 func TestForwardingMessage(t *testing.T) {
 	// start server
-	close := startServer(t)
+	_, close := startServer(t)
 	defer close()
 
 	// wait for the server to start
@@ -200,19 +225,96 @@ func TestForwardingMessage(t *testing.T) {
 	})
 }
 
-func TestForwardingMessageToMultipleClients(t *testing.T) {
+func TestHandlingMultipleClients(t *testing.T) {
+	// start server
+	mgr, close := startServer(t)
+	defer close()
 
+	// wait for the server to start
+	time.Sleep(1 * time.Second)
+
+	t.Run("can add a new client to an exisiting group", func(t *testing.T) {
+		// create a new client
+		c1 := NewclientTestFake()
+		defer c1.ws.Close()
+
+		// add a new client to an exisitng group
+		c2 := AddClientToGroup(t, c1.url, c1.key)
+		defer c2.ws.Close()
+
+		clientURL, _ := url.Parse(c1.url)
+		clientKey := strings.Split(clientURL.Host, ".")[0]
+		assert.Equal(t, 2, len(mgr.ClientList[clientKey].clients))
+	})
+
+	t.Run("group is remove, if all clients are disconnected", func(t *testing.T) {
+		// create new clients
+		c1 := NewclientTestFake()
+		c2 := AddClientToGroup(t, c1.url, c1.key)
+
+		// disconnect clients
+		c1.ws.Close()
+		c2.ws.Close()
+
+		// wait for the server to remove the clients
+		time.Sleep(time.Millisecond)
+
+		clientURL, _ := url.Parse(c1.url)
+		clientKey := strings.Split(clientURL.Host, ".")[0]
+		_, ok := mgr.ClientList[clientKey]
+		assert.False(t, ok)
+	})
+
+	t.Run("message sent to a group is received by all the clients", func(t *testing.T) {
+		// create a new client
+		c1 := NewclientTestFake()
+		defer c1.ws.Close()
+
+		// add a new client to an exisitng group
+		c2 := AddClientToGroup(t, c1.url, c1.key)
+		defer c2.ws.Close()
+
+		// add a new client to an exisitng group
+		c3 := AddClientToGroup(t, c1.url, c1.key)
+		defer c3.ws.Close()
+
+		// stream data from server
+		go c1.read()
+		go c2.read()
+		go c3.read()
+
+		whTrigger := webhookTrigger{
+			url: c1.url,
+		}
+		whTrigger.sendPOSTRequest()
+
+		time.Sleep(time.Millisecond)
+		// check if the binary message (request) by all the
+		// clients is equal
+		c1out := c1.output[websocket.BinaryMessage][0]
+		c2out := c2.output[websocket.BinaryMessage][0]
+		c3out := c3.output[websocket.BinaryMessage][0]
+
+		assert.Equal(t, c1out, c2out)
+		assert.Equal(t, c1out, c2out)
+
+		assert.Equal(t, c2out, c1out)
+		assert.Equal(t, c2out, c3out)
+
+		assert.Equal(t, c3out, c1out)
+		assert.Equal(t, c3out, c2out)
+	})
 }
 
 func TestClienConnection(t *testing.T) {
 
 	// set PingWait and PongWait for server
-	server.PongWaitTime = 1 * time.Second
-	server.PingWaitTime = (server.PongWaitTime * 9) / 10
+	PongWaitTime = 1 * time.Second
+	PingWaitTime = (PongWaitTime * 9) / 10
 
 	// start server
-	manager := server.NewManager()
-	mux := server.NewWebHookHandler(manager, "localhost:8080")
+	manager := NewManager()
+	mux := NewWebHookHandler(manager, "localhost:8080")
 	srv := http.Server{
 		Addr:    ":8080",
 		Handler: mux,
@@ -264,7 +366,7 @@ func TestClienConnection(t *testing.T) {
 			})
 
 			// wait for pong timeout to occure in server
-			time.Sleep((server.PongWaitTime * 13) / 10)
+			time.Sleep((PongWaitTime * 13) / 10)
 
 			// check if client still exists is Manager map
 			u, _ := url.Parse(c.url)
@@ -285,7 +387,7 @@ func TestClienConnection(t *testing.T) {
 			c.ws.Close()
 
 			// wait for pong time out
-			time.Sleep(server.PongWaitTime)
+			time.Sleep(PongWaitTime)
 
 			// check if client still exists is Manager map
 			checkClientConnectionClose(t, manager, c)
@@ -299,7 +401,7 @@ func TestClienConnection(t *testing.T) {
 			go c.read()
 
 			// wait for pong time out
-			time.Sleep(server.PongWaitTime)
+			time.Sleep(PongWaitTime)
 
 			// check if client connection is open
 			checkClientConnectionOpen(t, manager, c)
@@ -309,13 +411,13 @@ func TestClienConnection(t *testing.T) {
 			t.Parallel()
 			c := NewclientTestFake()
 			c.ws.Close()
-			time.Sleep(server.PongWaitTime)
+			time.Sleep(PongWaitTime)
 			checkClientConnectionClose(t, manager, c)
 		})
 	})
 }
 
-func checkClientConnectionClose(t testing.TB, manager *server.Manager, c *clientTestFake) {
+func checkClientConnectionClose(t testing.TB, manager *Manager, c *clientTestFake) {
 	u, _ := url.Parse(c.url)
 	subdomain := strings.Split(u.Host, ".")[0]
 	_, ok := manager.ClientList[subdomain]
@@ -341,7 +443,7 @@ func checkClientConnectionClose(t testing.TB, manager *server.Manager, c *client
 	}
 }
 
-func checkClientConnectionOpen(t testing.TB, manager *server.Manager, c *clientTestFake) {
+func checkClientConnectionOpen(t testing.TB, manager *Manager, c *clientTestFake) {
 	u, _ := url.Parse(c.url)
 	subdomain := strings.Split(u.Host, ".")[0]
 	_, ok := manager.ClientList[subdomain]
@@ -367,16 +469,16 @@ func checkClientConnectionOpen(t testing.TB, manager *server.Manager, c *clientT
 	}
 }
 
-func startServer(t testing.TB) func() error {
+func startServer(t testing.TB) (*Manager, func() error) {
 	t.Helper()
-	clientManager := server.NewManager()
-	mux := server.NewWebHookHandler(clientManager, "localhost:8080")
+	clientManager := NewManager()
+	mux := NewWebHookHandler(clientManager, "localhost:8080")
 	srv := &http.Server{
 		Addr:    ":8080",
 		Handler: mux,
 	}
 	go func() {
-		fmt.Println(srv.ListenAndServe())
+		fmt.Println("\n", srv.ListenAndServe())
 	}()
-	return srv.Close
+	return clientManager, srv.Close
 }
