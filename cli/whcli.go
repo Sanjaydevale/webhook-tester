@@ -53,6 +53,13 @@ func (c *client) Read(w io.Writer, fields []string, port int) {
 	}
 }
 
+func forwardRequestToPorts(c *client, req *http.Request, ports []int) {
+	for _, port := range ports {
+		fmt.Println(port)
+		forwardRequest(c, req, port)
+	}
+}
+
 func forwardRequest(c *client, req *http.Request, port int) {
 	req.URL, _ = url.Parse(fmt.Sprintf("http://localhost:%d", port))
 	req.RequestURI = ""

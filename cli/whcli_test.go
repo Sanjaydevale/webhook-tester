@@ -1,17 +1,22 @@
-package cli_test
+package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"whtester/cli"
+	"time"
 	"whtester/serialize"
 
 	"github.com/gorilla/websocket"
 )
+
+const fakeServerBaseURL = ":8080"
+const fakeServerWSURL = "ws://localhost:8080/ws"
 
 type localServerTestFake struct {
 	req      http.Request
@@ -24,7 +29,9 @@ func (l *localServerTestFake) Start() {
 }
 
 func (l *localServerTestFake) Close() {
-	l.srv.Close()
+	if err := l.srv.Shutdown(context.Background()); err != nil {
+		log.Fatalf("shutting down local server tests fake: %s", err)
+	}
 }
 
 func (l *localServerTestFake) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +51,16 @@ func NewLocalServerTestFake(port string) *localServerTestFake {
 type serverTestFake struct {
 	ws  *websocket.Conn
 	mux *http.ServeMux
+	srv *http.Server
+}
+
+func (s *serverTestFake) Close() {
+	s.ws.Close()
+	err := s.srv.Shutdown(context.Background())
+	if err != nil {
+		log.Fatalf("shutting down server: %s", err)
+	}
+	fmt.Println("closing server")
 }
 
 func (s serverTestFake) WriteMessage(msg string) {
@@ -58,8 +75,13 @@ func (s serverTestFake) WriteEncodedRequest(body string) {
 }
 
 func (s *serverTestFake) Start() {
+	go func() {
+		err := s.srv.ListenAndServe()
+		if err != http.ErrServerClosed {
+			log.Fatalf("starting fake server: %s", err)
+		}
+	}()
 	fmt.Println("server started")
-	http.ListenAndServe(":8080", s.mux)
 }
 
 func NewserverTestFake() *serverTestFake {
@@ -71,7 +93,12 @@ func NewserverTestFake() *serverTestFake {
 		s.ws = ws
 		ws.WriteMessage(websocket.TextMessage, []byte("tempURL"))
 	})
+	srv := &http.Server{
+		Handler: mux,
+		Addr:    fakeServerBaseURL,
+	}
 	s.mux = mux
+	s.srv = srv
 	return s
 }
 
@@ -83,7 +110,7 @@ func TestWhCLI(t *testing.T) {
 	t.Run("cli establishes websocket connection with the server", func(t *testing.T) {
 
 		// try to connect to the server
-		c := cli.Newclient("ws://localhost:8080/ws")
+		c := Newclient(fakeServerWSURL)
 		defer c.Conn.Close()
 		if c.Conn == nil {
 			t.Fatal("cli didn't establish a connection with the server")
@@ -95,7 +122,7 @@ func TestWhCLI(t *testing.T) {
 		buf := new(bytes.Buffer)
 
 		// make clinet connection
-		c := cli.Newclient("ws://localhost:8080/ws")
+		c := Newclient(fakeServerWSURL)
 		defer c.Conn.Close()
 		want := "this is a temp message"
 		s.WriteMessage(want)
@@ -109,7 +136,7 @@ func TestWhCLI(t *testing.T) {
 
 		buf := new(bytes.Buffer)
 
-		c := cli.Newclient("ws://localhost:8080/ws")
+		c := Newclient(fakeServerWSURL)
 		defer c.Conn.Close()
 
 		msg := "message sent"
@@ -130,7 +157,7 @@ func TestWhCLI(t *testing.T) {
 
 		buf := new(bytes.Buffer)
 
-		c := cli.Newclient("ws://localhost:8080/ws")
+		c := Newclient(fakeServerWSURL)
 		defer c.Conn.Close()
 
 		s.WriteEncodedRequest("this is a test")
@@ -147,7 +174,7 @@ func TestWhCLI(t *testing.T) {
 
 	t.Run("client forwards the received request to locally running server", func(t *testing.T) {
 		// create a new client
-		c := cli.Newclient("ws://localhost:8080/ws")
+		c := Newclient(fakeServerWSURL)
 		defer c.Conn.Close()
 
 		// create a new local server
@@ -168,6 +195,43 @@ func TestWhCLI(t *testing.T) {
 	})
 }
 
+func TestForwardMultiplePorts(t *testing.T) {
+	// create a new request
+	req, err := http.NewRequest(http.MethodPost, "http://testurl.com", nil)
+	if err != nil {
+		t.Errorf("creating new request: %s", err)
+	}
+
+	// create a new server
+	srv := NewserverTestFake()
+	go srv.Start()
+	defer srv.Close()
+
+	// wait for some time to get the server started
+	time.Sleep(time.Millisecond)
+	// create a new client
+	c := Newclient(fakeServerWSURL)
+	defer c.Conn.Close()
+
+	// spin up new locally running server
+	lsrv1 := NewLocalServerTestFake(":5555")
+	go lsrv1.Start()
+	defer lsrv1.Close()
+
+	lsrv2 := NewLocalServerTestFake(":5556")
+	go lsrv2.Start()
+	defer lsrv2.Close()
+
+	ports := []int{5555, 5556}
+	forwardRequestToPorts(c, req, ports)
+	if !lsrv1.received {
+		t.Errorf("local server 1 didn't receive message")
+	}
+	if !lsrv2.received {
+		t.Errorf("local server 2 didn't receive message")
+	}
+}
+
 func BenchmarkReadRequest(b *testing.B) {
 	// create a new http request
 	body := bytes.NewBuffer([]byte("arbitary body for http request"))
@@ -175,6 +239,6 @@ func BenchmarkReadRequest(b *testing.B) {
 	fields := []string{"Header", "Method", "Body"}
 
 	for i := 0; i < b.N; i++ {
-		cli.ReadRequestFields(fields, *req)
+		ReadRequestFields(fields, *req)
 	}
 }
