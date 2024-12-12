@@ -49,12 +49,13 @@ func (c *client) Read(w io.Writer, fields []string, ports []int) {
 		fmt.Fprint(w, ReadRequestFields(fields, *req))
 
 		// forward request to locally running program
-		forwardRequestToPorts(c, req, ports)
+		forwardRequestToPorts(c, data, ports)
 	}
 }
 
-func forwardRequestToPorts(c *client, req *http.Request, ports []int) {
+func forwardRequestToPorts(c *client, reqblob []byte, ports []int) {
 	for _, port := range ports {
+		req := serialize.DecodeRequest(reqblob)
 		fmt.Println(port)
 		forwardRequest(c, req, port)
 	}

@@ -202,7 +202,8 @@ func TestWhCLI(t *testing.T) {
 
 func TestForwardMultiplePorts(t *testing.T) {
 	// create a new request
-	req, err := http.NewRequest(http.MethodPost, "http://testurl.com", nil)
+	body := strings.NewReader("hello world")
+	req, err := http.NewRequest(http.MethodPost, "http://testurl.com", body)
 	if err != nil {
 		t.Errorf("creating new request: %s", err)
 	}
@@ -232,7 +233,8 @@ func TestForwardMultiplePorts(t *testing.T) {
 	time.Sleep(time.Millisecond)
 
 	ports := []int{5556, 5557}
-	forwardRequestToPorts(c, req, ports)
+	reqblob := serialize.EncodeRequest(req)
+	forwardRequestToPorts(c, reqblob, ports)
 	if !lsrv1.received {
 		t.Errorf("local server 1 didn't receive message")
 	}
