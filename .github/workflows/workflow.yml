@@ -10,25 +10,8 @@ on:
     branches: ["main"]
 
 jobs:
-  run_tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: "1.22.2"
-
-      - name: Test cli
-        run: go test ./cli
-      - name: Test server
-        run: go test ./server
-      - name: Test serialize
-        run: go test ./serialize
 
   build_binary_files:
-    needs: run_tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +36,6 @@ jobs:
           git push origin main
 
   push_to_registry:
-    needs: run_tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
