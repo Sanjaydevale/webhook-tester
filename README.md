@@ -6,7 +6,7 @@ Feel free to explore the project, contribute to its development, and leverage it
 
 ### How it works:
 
-when you run the client executable file it makes a websocket connection with the server, the server generates a random URL and sends it to the client, the client displays it in the console,
+when you run the client executable  file it makes a websocket connection with the server, the server generates a random URL and sends it to the client, the client displays it in the console,
 
 ![client](https://github.com/sanjayJ369/webhook-tester/assets/111266023/53dc2b0f-3744-42df-8042-e77fab97a3d7)
 
