@@ -1,4 +1,4 @@
-This project is a simple webhook tester implemented using Golang and developed following the principles of Test-Driven Development (TDD). It provides a convenient way to test your webhook program without the need for a public webhook link. The project is completely automated using CI/CD with GitHub Actions, ensuring that the code is properly tested and built with each change.
+This project is a simple webhook tester implemented using Golang and developed following the principles of Test-Driven Development (TDD). It provides a convenient way to test your webhook program without the need for a public webhook link. The project is completely automated using CI/CD with GitHub Actions, ensuring that the code is properly tested and  built with each change.
 
 If you have a webhook program that you want to test but don't have a publicly accessible webhook URL, this webhook tester can come in handy. It allows you to simulate receiving webhook requests.
 
