@@ -30,9 +30,9 @@ func (p *ports) Set(value string) error {
 
 var (
 	defaultFields = []string{"Method", "Header", "Body"}
-	serverLink    = "wss://new.whlink.sanjayj.dev/ws"
+	serverLink    = "ws://new.whlink.webhooktester.tech/ws"
 	// serverLink    = "ws://localhost:8080/ws"
-	joinGroupLink = "wss://new.whlink.sanjayj.dev/wsold"
+	joinGroupLink = "ws://new.whlink.webhooktester.tech/wsold"
 )
 
 func main() {
